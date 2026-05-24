@@ -76,5 +76,5 @@ test('only visibly updated components are reported for a focused update', async 
 
   await expect.poll(async () => page.locator('angular-scan-overlay').evaluate((host) => {
     return (host.shadowRoot?.textContent ?? '').replace(/\s+/g, ' ');
-  })).toContain('Count 1');
+  })).toContain('Count1');
 });
