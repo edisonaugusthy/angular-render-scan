@@ -3,7 +3,7 @@
   "version": 1,
   "newProjectRoot": "projects",
   "projects": {
-    "angular-scan-demo": {
+    "angular-render-scan-demo": {
       "projectType": "application",
       "schematics": {},
       "root": "demo",
@@ -39,10 +39,10 @@
           "builder": "@angular/build:dev-server",
           "configurations": {
             "production": {
-              "buildTarget": "angular-scan-demo:build:production"
+              "buildTarget": "angular-render-scan-demo:build:production"
             },
             "development": {
-              "buildTarget": "angular-scan-demo:build:development"
+              "buildTarget": "angular-render-scan-demo:build:development"
             }
           },
           "defaultConfiguration": "development"

@@ -1,5 +1,5 @@
 import { FpsMeter } from './fps';
-import type { AngularRenderCycle, AngularRenderEntry, AngularScanResolvedOptions } from '../../domain/entities';
+import type { AngularRenderCycle, AngularRenderEntry, AngularRenderScanResolvedOptions } from '../../domain/entities';
 
 interface ActiveHighlight {
   entry: AngularRenderEntry;
@@ -96,8 +96,8 @@ const TOOLBAR_CSS = `
   }
 `;
 
-export class AngularScanOverlay {
-  private readonly host = document.createElement('angular-scan-overlay');
+export class AngularRenderScanOverlay {
+  private readonly host = document.createElement('angular-render-scan-overlay');
   private readonly shadow = this.host.attachShadow({ mode: 'open' });
   private readonly canvas = document.createElement('canvas');
   private readonly context = this.canvas.getContext('2d');
@@ -108,7 +108,7 @@ export class AngularScanOverlay {
   private lastToolbarHtml = '';
   private latestCycle?: AngularRenderCycle;
   private highlights: Array<{ entry: AngularRenderEntry; expiresAt: number }> = [];
-  private options: AngularScanResolvedOptions;
+  private options: AngularRenderScanResolvedOptions;
 
   private toolbarX = 16;
   private toolbarY = 16;
@@ -116,7 +116,7 @@ export class AngularScanOverlay {
   private dragStartX = 0;
   private dragStartY = 0;
 
-  constructor(options: AngularScanResolvedOptions, private readonly onToggle: (enabled: boolean) => void) {
+  constructor(options: AngularRenderScanResolvedOptions, private readonly onToggle: (enabled: boolean) => void) {
     this.options = options;
     this.host.style.pointerEvents = 'none';
     this.canvas.style.cssText = [
@@ -156,9 +156,9 @@ export class AngularScanOverlay {
         const globalNg = (window as any).ng;
         if (globalNg && globalNg.getComponent) {
           const component = globalNg.getComponent(clicked.entry.element);
-          console.info(`[angular-scan] Inspecting <${clicked.entry.name}>:`, component || clicked.entry.element);
+          console.info(`[angular-render-scan] Inspecting <${clicked.entry.name}>:`, component || clicked.entry.element);
         } else {
-          console.info(`[angular-scan] Inspecting <${clicked.entry.name}> element:`, clicked.entry.element);
+          console.info(`[angular-render-scan] Inspecting <${clicked.entry.name}> element:`, clicked.entry.element);
         }
       }
     };
@@ -217,7 +217,7 @@ export class AngularScanOverlay {
     window.addEventListener('touchend', handleDragEnd);
   }
 
-  updateOptions(options: AngularScanResolvedOptions): void {
+  updateOptions(options: AngularRenderScanResolvedOptions): void {
     this.options = options;
     this.renderToolbar();
   }
@@ -380,7 +380,7 @@ export class AngularScanOverlay {
     const htmlChanged = this.replaceToolbarHtml(container, `
       <div class="toolbar" style="right: ${this.toolbarX}px; bottom: ${this.toolbarY}px;">
         <label class="switch">
-          <input type="checkbox" ${this.options.enabled ? 'checked' : ''} aria-label="Angular Scan enabled" />
+          <input type="checkbox" ${this.options.enabled ? 'checked' : ''} aria-label="Angular Render Scan enabled" />
           <span class="track" aria-hidden="true"></span>
           <span class="switch-text">${this.options.enabled ? 'On' : 'Off'}</span>
         </label>

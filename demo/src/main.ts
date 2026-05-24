@@ -1,6 +1,6 @@
 import { bootstrapApplication } from '@angular/platform-browser';
 import { ChangeDetectionStrategy, Component, Input, Output, EventEmitter, computed, signal, WritableSignal } from '@angular/core';
-import { AngularScanMarkDirective, provideAngularScan, setOptions } from 'angular-scan';
+import { AngularRenderScanMarkDirective, provideAngularRenderScan, setOptions } from 'angular-render-scan';
 import { CommonModule } from '@angular/common';
 
 interface Product {
@@ -23,9 +23,9 @@ const PRODUCTS: Product[] = [
 @Component({
   selector: 'app-product-card',
   standalone: true,
-  imports: [AngularScanMarkDirective, CommonModule],
+  imports: [AngularRenderScanMarkDirective, CommonModule],
   template: `
-    <article angularScanMark="ProductCard" class="product-card">
+    <article angularRenderScanMark="ProductCard" class="product-card">
       <div class="product-icon">{{ product.icon }}</div>
       <div class="product-info">
         <h3>{{ product.title }}</h3>
@@ -47,9 +47,9 @@ class ProductCardComponent {
 @Component({
   selector: 'app-cart-item',
   standalone: true,
-  imports: [AngularScanMarkDirective, CommonModule],
+  imports: [AngularRenderScanMarkDirective, CommonModule],
   template: `
-    <div angularScanMark="CartItem" class="cart-item">
+    <div angularRenderScanMark="CartItem" class="cart-item">
       <span>{{ item.icon }} {{ item.title }}</span>
       <div class="cart-item-actions">
         <span class="qty">x{{ quantity }}</span>
@@ -67,9 +67,9 @@ class CartItemComponent {
 @Component({
   selector: 'app-shopping-cart',
   standalone: true,
-  imports: [AngularScanMarkDirective, CommonModule, CartItemComponent],
+  imports: [AngularRenderScanMarkDirective, CommonModule, CartItemComponent],
   template: `
-    <aside angularScanMark="ShoppingCart" class="cart-sidebar">
+    <aside angularRenderScanMark="ShoppingCart" class="cart-sidebar">
       <h2>Your Cart</h2>
       <p class="cart-summary">{{ totalItems() }} items | Total: \${{ totalPrice().toFixed(2) }}</p>
       
@@ -129,9 +129,9 @@ class ShoppingCartComponent {
 @Component({
   selector: 'app-recommendations',
   standalone: true,
-  imports: [AngularScanMarkDirective],
+  imports: [AngularRenderScanMarkDirective],
   template: `
-    <section angularScanMark="Recommendations" class="panel slow-panel">
+    <section angularRenderScanMark="Recommendations" class="panel slow-panel">
       <h2>AI Recommendations (Slow)</h2>
       <p>Simulating expensive logic for the red heatmap visual.</p>
       <div class="recommendation-badge">Confidence Score: {{ expensiveScore() }}</div>
@@ -158,9 +158,9 @@ class RecommendationsComponent {
 @Component({
   selector: 'app-hero-banner',
   standalone: true,
-  imports: [AngularScanMarkDirective],
+  imports: [AngularRenderScanMarkDirective],
   template: `
-    <section angularScanMark="HeroBanner" class="hero-banner">
+    <section angularRenderScanMark="HeroBanner" class="hero-banner">
       <h1>Developer Store</h1>
       <p>Buy the best tools for your next coding session.</p>
       <button class="secondary" (click)="toggleTheme()">Toggle Dark Mode ({{isDark() ? 'On' : 'Off'}})</button>
@@ -190,7 +190,7 @@ class HeroBannerComponent {
     HeroBannerComponent
   ],
   template: `
-    <main angularScanMark="AppRoot">
+    <main angularRenderScanMark="AppRoot">
       <app-hero-banner />
 
       <div class="store-layout">
@@ -233,7 +233,7 @@ class AppComponent {
 
 bootstrapApplication(AppComponent, {
   providers: [
-    provideAngularScan({
+    provideAngularRenderScan({
       enabled: true,
       showToolbar: true,
       animationSpeed: 'fast',

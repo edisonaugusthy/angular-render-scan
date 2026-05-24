@@ -1,6 +1,6 @@
-export type AngularScanAnimationSpeed = 'slow' | 'fast' | 'off';
+export type AngularRenderScanAnimationSpeed = 'slow' | 'fast' | 'off';
 
-export interface AngularScanTheme {
+export interface AngularRenderScanTheme {
   fast: readonly [number, number, number];
   medium: readonly [number, number, number];
   slow: readonly [number, number, number];
@@ -29,27 +29,27 @@ export interface AngularRenderCycle {
   entries: AngularRenderEntry[];
 }
 
-export interface AngularScanOptions {
+export interface AngularRenderScanOptions {
   enabled?: boolean;
   showToolbar?: boolean;
-  animationSpeed?: AngularScanAnimationSpeed;
+  animationSpeed?: AngularRenderScanAnimationSpeed;
   showFPS?: boolean;
   log?: boolean;
   dangerouslyForceRunInProduction?: boolean;
-  theme?: Partial<AngularScanTheme>;
+  theme?: Partial<AngularRenderScanTheme>;
   onCycleStart?: () => void;
   onRender?: (entry: AngularRenderEntry) => void;
   onCycleFinish?: (cycle: AngularRenderCycle) => void;
 }
 
-export interface AngularScanResolvedOptions extends Required<Omit<AngularScanOptions, 'onCycleStart' | 'onRender' | 'onCycleFinish' | 'theme'>> {
-  theme: AngularScanTheme;
+export interface AngularRenderScanResolvedOptions extends Required<Omit<AngularRenderScanOptions, 'onCycleStart' | 'onRender' | 'onCycleFinish' | 'theme'>> {
+  theme: AngularRenderScanTheme;
   onCycleStart?: () => void;
   onRender?: (entry: AngularRenderEntry) => void;
   onCycleFinish?: (cycle: AngularRenderCycle) => void;
 }
 
-export interface AngularScanRegisteredComponent {
+export interface AngularRenderScanRegisteredComponent {
   id: string;
   name: string;
   element: Element;

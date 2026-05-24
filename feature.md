@@ -2,12 +2,12 @@
 
 ## Product Goal
 
-Angular Scan gives developers an on-page, React Scan-like view of Angular change detection. Enable the package, interact with a real Angular app, and immediately see which components participated in change detection, how often, and how long the latest checks took using Auto-instrumentation.
+Angular Render Scan gives developers an on-page, React Scan-like view of Angular change detection. Enable the package, interact with a real Angular app, and immediately see which components participated in change detection, how often, and how long the latest checks took using Auto-instrumentation.
 
 ## Domain Model (DDD Structure)
 
 The project is structured using Domain-Driven Design (DDD) principles:
-- `src/domain/`: Core business models (`AngularScanOptions`, `AngularRenderEntry`, `AngularRenderCycle`, `AngularScanTheme`) and configuration logic (`options.ts`).
+- `src/domain/`: Core business models (`AngularRenderScanOptions`, `AngularRenderEntry`, `AngularRenderCycle`, `AngularRenderScanTheme`) and configuration logic (`options.ts`).
 - `src/application/`: Application orchestration (`runtime.ts`) and stateful component statistics aggregation (`stats.ts`).
 - `src/infrastructure/ui/`: External DOM interaction, canvas drawing (`overlay.ts`), and framerate timing (`fps.ts`).
 - `src/infrastructure/angular/`: Framework-specific integrations, providers, directives, and auto-instrumentation (`angular.ts`, `auto-instrumentation.ts`).
@@ -26,7 +26,7 @@ The project is structured using Domain-Driven Design (DDD) principles:
 
 The overlay feels close to React Scan: lightweight, bright, and developer-tool oriented. Highlights use a soft light-blue to violet treatment with red accents for poor performance.
 
-To update the color, change the `theme` option in your `AngularScanOptions` config:
+To update the color, change the `theme` option in your `AngularRenderScanOptions` config:
 
 - `fast`: Color for sub-5ms renders.
 - `medium`: Color for 5-15ms renders.

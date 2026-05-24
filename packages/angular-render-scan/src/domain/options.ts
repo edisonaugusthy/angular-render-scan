@@ -1,6 +1,6 @@
-import type { AngularScanOptions, AngularScanResolvedOptions, AngularScanTheme } from './entities';
+import type { AngularRenderScanOptions, AngularRenderScanResolvedOptions, AngularRenderScanTheme } from './entities';
 
-const defaultTheme: AngularScanTheme = {
+const defaultTheme: AngularRenderScanTheme = {
   fast: [147, 197, 253],          // blue-300
   medium: [253, 224, 71],         // yellow-300
   slow: [239, 68, 68],            // red-500
@@ -8,7 +8,7 @@ const defaultTheme: AngularScanTheme = {
   labelBackgroundSlow: [220, 38, 38],  // red-600
 };
 
-const defaultOptions: AngularScanResolvedOptions = {
+const defaultOptions: AngularRenderScanResolvedOptions = {
   enabled: true,
   showToolbar: true,
   animationSpeed: 'fast',
@@ -18,10 +18,10 @@ const defaultOptions: AngularScanResolvedOptions = {
   theme: defaultTheme
 };
 
-let options: AngularScanResolvedOptions = { ...defaultOptions };
+let options: AngularRenderScanResolvedOptions = { ...defaultOptions };
 
-export function resolveOptions(next?: AngularScanOptions): AngularScanResolvedOptions {
-  const merged = { ...options, ...next } as AngularScanResolvedOptions;
+export function resolveOptions(next?: AngularRenderScanOptions): AngularRenderScanResolvedOptions {
+  const merged = { ...options, ...next } as AngularRenderScanResolvedOptions;
 
   if (!['slow', 'fast', 'off'].includes(merged.animationSpeed)) {
     merged.animationSpeed = defaultOptions.animationSpeed;
@@ -32,12 +32,12 @@ export function resolveOptions(next?: AngularScanOptions): AngularScanResolvedOp
   return merged;
 }
 
-export function setResolvedOptions(next: Partial<AngularScanOptions>): AngularScanResolvedOptions {
+export function setResolvedOptions(next: Partial<AngularRenderScanOptions>): AngularRenderScanResolvedOptions {
   options = resolveOptions(next);
   return options;
 }
 
-export function getResolvedOptions(): AngularScanResolvedOptions {
+export function getResolvedOptions(): AngularRenderScanResolvedOptions {
   return { ...options };
 }
 

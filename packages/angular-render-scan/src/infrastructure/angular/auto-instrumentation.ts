@@ -47,7 +47,7 @@ export function setupAutoInstrumentation(): void {
         if (!compData) {
           try {
             const element = globalNg.getHostElement(instance);
-            if (element && element instanceof Element && !element.hasAttribute('angularScanMark')) {
+            if (element && element instanceof Element && !element.hasAttribute('angularRenderScanMark')) {
               const name = instance.constructor?.name || 'AnonymousComponent';
               const id = `ng-scan-auto-${++nextAutoComponentId}`;
               compData = { id, name, element, signature: '' };
@@ -90,7 +90,7 @@ export function setupAutoInstrumentation(): void {
                 compData.signature = nextSignature;
                 const entry = recordComponentCheck(frame.id, selfDuration, cycleId);
                 if (entry) {
-                  window.dispatchEvent(new CustomEvent('angular-scan:render', { detail: entry }));
+                  window.dispatchEvent(new CustomEvent('angular-render-scan:render', { detail: entry }));
                 }
               }
             }

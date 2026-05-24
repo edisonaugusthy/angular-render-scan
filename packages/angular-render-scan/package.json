@@ -1,5 +1,5 @@
 {
-  "name": "angular-scan",
+  "name": "angular-render-scan",
   "version": "0.1.0",
   "description": "Visual Angular change-detection scanner for investor demos.",
   "type": "module",

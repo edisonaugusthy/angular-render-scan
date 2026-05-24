@@ -1,27 +1,27 @@
 import { APP_INITIALIZER, ApplicationRef, Directive, ElementRef, EnvironmentProviders, InjectionToken, Input, OnDestroy, Provider, inject, makeEnvironmentProviders, isDevMode, NgZone } from '@angular/core';
 import { beginCycle, currentCycleId, endCycle, ensureCycleForComponentCheck, scan, setOptions, setTaskScheduler } from '../../application/runtime';
 import { recordComponentCheck, registerComponent, unregisterComponent } from '../../application/stats';
-import type { AngularScanOptions } from '../../domain/entities';
+import type { AngularRenderScanOptions } from '../../domain/entities';
 import { setupAutoInstrumentation } from './auto-instrumentation';
 
-export const ANGULAR_SCAN_OPTIONS = new InjectionToken<AngularScanOptions>('ANGULAR_SCAN_OPTIONS');
+export const ANGULAR_RENDER_SCAN_OPTIONS = new InjectionToken<AngularRenderScanOptions>('ANGULAR_RENDER_SCAN_OPTIONS');
 
 let nextComponentId = 0;
 
 @Directive({
-  selector: '[angularScanMark]',
+  selector: '[angularRenderScanMark]',
   standalone: true
 })
-export class AngularScanMarkDirective implements OnDestroy {
+export class AngularRenderScanMarkDirective implements OnDestroy {
   private readonly element = inject<ElementRef<Element>>(ElementRef).nativeElement;
-  private readonly parent = inject(AngularScanMarkDirective, { optional: true, skipSelf: true });
+  private readonly parent = inject(AngularRenderScanMarkDirective, { optional: true, skipSelf: true });
   private readonly id = `ng-scan-${++nextComponentId}`;
   private checkStartedAt = 0;
   private childrenDuration = 0;
   private name = this.inferName();
 
-  @Input('angularScanMark')
-  set angularScanMark(name: string | undefined) {
+  @Input('angularRenderScanMark')
+  set angularRenderScanMark(name: string | undefined) {
     if (name) {
       this.name = name;
       this.register();
@@ -53,7 +53,7 @@ export class AngularScanMarkDirective implements OnDestroy {
 
     const entry = recordComponentCheck(this.id, selfDuration, cycleId);
     if (entry) {
-      window.dispatchEvent(new CustomEvent('angular-scan:render', { detail: entry }));
+      window.dispatchEvent(new CustomEvent('angular-render-scan:render', { detail: entry }));
     }
   }
 
@@ -83,19 +83,19 @@ function normalizeText(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }
 
-export function provideAngularScan(options: AngularScanOptions = {}): EnvironmentProviders {
+export function provideAngularRenderScan(options: AngularRenderScanOptions = {}): EnvironmentProviders {
   return makeEnvironmentProviders([
-    { provide: ANGULAR_SCAN_OPTIONS, useValue: options },
-    angularScanInitializerProvider()
+    { provide: ANGULAR_RENDER_SCAN_OPTIONS, useValue: options },
+    angularRenderScanInitializerProvider()
   ]);
 }
 
-function angularScanInitializerProvider(): Provider {
+function angularRenderScanInitializerProvider(): Provider {
   return {
     provide: APP_INITIALIZER,
     multi: true,
-    deps: [ApplicationRef, ANGULAR_SCAN_OPTIONS, NgZone],
-    useFactory: (appRef: ApplicationRef, options: AngularScanOptions, ngZone: NgZone) => () => {
+    deps: [ApplicationRef, ANGULAR_RENDER_SCAN_OPTIONS, NgZone],
+    useFactory: (appRef: ApplicationRef, options: AngularRenderScanOptions, ngZone: NgZone) => () => {
       if (!isDevMode() && !options.dangerouslyForceRunInProduction) {
         return;
       }
@@ -121,8 +121,8 @@ function angularScanInitializerProvider(): Provider {
 let originalTick: (() => void) | null = null;
 
 function patchApplicationRef(appRef: ApplicationRef): void {
-  const candidate = appRef as ApplicationRef & { __angularScanPatched?: boolean };
-  if (candidate.__angularScanPatched) {
+  const candidate = appRef as ApplicationRef & { __angularRenderScanPatched?: boolean };
+  if (candidate.__angularRenderScanPatched) {
     return;
   }
 
@@ -135,30 +135,30 @@ function patchApplicationRef(appRef: ApplicationRef): void {
       endCycle(cycleId);
     }
   };
-  candidate.__angularScanPatched = true;
+  candidate.__angularRenderScanPatched = true;
 }
 
 export function restoreApplicationRef(appRef: ApplicationRef): void {
-  const candidate = appRef as ApplicationRef & { __angularScanPatched?: boolean };
-  if (candidate.__angularScanPatched && originalTick) {
+  const candidate = appRef as ApplicationRef & { __angularRenderScanPatched?: boolean };
+  if (candidate.__angularRenderScanPatched && originalTick) {
     candidate.tick = originalTick;
-    candidate.__angularScanPatched = false;
+    candidate.__angularRenderScanPatched = false;
     originalTick = null;
   }
 }
 
 function registerGlobalApplicationRef(appRef: ApplicationRef): void {
   const globalWindow = window as Window & {
-    __ANGULAR_SCAN_APP_REF__?: ApplicationRef;
-    AngularScan?: {
+    __ANGULAR_RENDER_SCAN_APP_REF__?: ApplicationRef;
+    AngularRenderScan?: {
       scan: typeof scan;
       setOptions: typeof setOptions;
       stop: () => void;
     };
   };
-  globalWindow.__ANGULAR_SCAN_APP_REF__ = appRef;
-  globalWindow.AngularScan = {
-    ...globalWindow.AngularScan,
+  globalWindow.__ANGULAR_RENDER_SCAN_APP_REF__ = appRef;
+  globalWindow.AngularRenderScan = {
+    ...globalWindow.AngularRenderScan,
     scan,
     setOptions,
     stop: () => {

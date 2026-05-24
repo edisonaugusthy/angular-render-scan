@@ -1,12 +1,12 @@
 {
-  "name": "angular-scan-workspace",
+  "name": "angular-render-scan-workspace",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "npm run build:scan && npm run build:demo",
-    "build:scan": "tsup --config packages/angular-scan/tsup.config.ts && cp packages/angular-scan/dist/auto.global.global.js packages/angular-scan/dist/auto.global.js",
-    "build:demo": "ng build angular-scan-demo",
-    "dev": "ng serve angular-scan-demo --host 127.0.0.1 --port 4200",
+    "build:scan": "tsup --config packages/angular-render-scan/tsup.config.ts && cp packages/angular-render-scan/dist/auto.global.global.js packages/angular-render-scan/dist/auto.global.js",
+    "build:demo": "ng build angular-render-scan-demo",
+    "dev": "ng serve angular-render-scan-demo --host 127.0.0.1 --port 4200",
     "test": "vitest run",
     "test:e2e": "playwright test"
   },

@@ -1,9 +1,9 @@
-import { AngularScanOverlay } from '../infrastructure/ui/overlay';
+import { AngularRenderScanOverlay } from '../infrastructure/ui/overlay';
 import { getResolvedOptions, resolveOptions, setResolvedOptions } from '../domain/options';
 import { finishCycle, resetStats, startCycle } from './stats';
-import type { AngularRenderCycle, AngularScanOptions } from '../domain/entities';
+import type { AngularRenderCycle, AngularRenderScanOptions } from '../domain/entities';
 
-let overlay: AngularScanOverlay | undefined;
+let overlay: AngularRenderScanOverlay | undefined;
 let activeCycleId = 0;
 let activeCycleStartedAt = 0;
 let lastCycle: AngularRenderCycle | undefined;
@@ -15,15 +15,15 @@ export function setTaskScheduler(scheduler: (fn: () => void) => void) {
   scheduleTask = scheduler;
 }
 
-export function scan(options?: AngularScanOptions): void {
+export function scan(options?: AngularRenderScanOptions): void {
   const resolved = setResolvedOptions(resolveOptions(options));
   if (!overlay && typeof document !== 'undefined') {
-    overlay = new AngularScanOverlay(resolved, (enabled) => setOptions({ enabled }));
+    overlay = new AngularRenderScanOverlay(resolved, (enabled) => setOptions({ enabled }));
   }
   overlay?.updateOptions(resolved);
 }
 
-export function setOptions(options: Partial<AngularScanOptions>): void {
+export function setOptions(options: Partial<AngularRenderScanOptions>): void {
   const resolved = setResolvedOptions(options);
   overlay?.updateOptions(resolved);
 }
@@ -43,7 +43,7 @@ export function stop(): void {
   
   if (typeof window !== 'undefined') {
     const globalWindow = window as any;
-    if (globalWindow.__ANGULAR_SCAN_APP_REF__) {
+    if (globalWindow.__ANGULAR_RENDER_SCAN_APP_REF__) {
       // Assuming restoreApplicationRef was called via the global stop or we can't easily reach it here without circular deps.
       // But we can dispatch an event or just let the global handle it.
     }
@@ -79,7 +79,7 @@ export function endCycle(cycleId = activeCycleId): AngularRenderCycle | undefine
   overlay?.showCycle(cycle);
 
   if (options.log && cycle.entries.length > 0) {
-    console.groupCollapsed(`%c[angular-scan] cycle ${cycle.id} - ${cycle.duration.toFixed(2)}ms, ${cycle.renderedCount} components`, 'color: #7c3aed; font-weight: bold;');
+    console.groupCollapsed(`%c[angular-render-scan] cycle ${cycle.id} - ${cycle.duration.toFixed(2)}ms, ${cycle.renderedCount} components`, 'color: #7c3aed; font-weight: bold;');
     const tableData = cycle.entries.map((e) => ({
       Name: e.name,
       Count: e.count,

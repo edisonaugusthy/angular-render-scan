@@ -1,6 +1,6 @@
-import type { AngularRenderCycle, AngularRenderEntry, AngularScanRegisteredComponent } from '../domain/entities';
+import type { AngularRenderCycle, AngularRenderEntry, AngularRenderScanRegisteredComponent } from '../domain/entities';
 
-interface ComponentStats extends AngularScanRegisteredComponent {
+interface ComponentStats extends AngularRenderScanRegisteredComponent {
   totalDuration: number;
   totalChecks: number;
   latestDuration: number;
@@ -10,7 +10,7 @@ interface ComponentStats extends AngularScanRegisteredComponent {
 let cycleId = 0;
 const components = new Map<string, ComponentStats>();
 
-export function registerComponent(component: AngularScanRegisteredComponent): void {
+export function registerComponent(component: AngularRenderScanRegisteredComponent): void {
   const existing = components.get(component.id);
   components.set(component.id, {
     ...existing,

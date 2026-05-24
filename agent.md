@@ -4,7 +4,7 @@ This repository should be evolved as a small product-quality Angular instrumenta
 
 ## Working Principles
 
-- Treat `angular-scan` as the core domain. Demo app code should prove behavior, not contain package logic.
+- Treat `angular-render-scan` as the core domain. Demo app code should prove behavior, not contain package logic.
 - Keep domain concepts explicit: scan options, render entries, render cycles, component stats, overlay rendering, and Angular integration.
 - Prefer small modules with clear ownership over broad utility files.
 - Add types before behavior when a feature expands public or internal contracts.
@@ -12,12 +12,12 @@ This repository should be evolved as a small product-quality Angular instrumenta
 
 ## Domain Boundaries
 
-- `packages/angular-scan/src/types.ts`: public and shared domain contracts.
-- `packages/angular-scan/src/options.ts`: option validation and defaults.
-- `packages/angular-scan/src/stats.ts`: runtime component statistics and cycle aggregation.
-- `packages/angular-scan/src/runtime.ts`: public scanner lifecycle and cycle orchestration.
-- `packages/angular-scan/src/angular.ts`: Angular-specific provider and directive integration.
-- `packages/angular-scan/src/overlay.ts`: presentation layer for toolbar, canvas outlines, labels, and FPS.
+- `packages/angular-render-scan/src/domain/entities.ts`: public and shared domain contracts.
+- `packages/angular-render-scan/src/domain/options.ts`: option validation and defaults.
+- `packages/angular-render-scan/src/application/stats.ts`: runtime component statistics and cycle aggregation.
+- `packages/angular-render-scan/src/application/runtime.ts`: public scanner lifecycle and cycle orchestration.
+- `packages/angular-render-scan/src/infrastructure/angular/`: Angular-specific provider, directive, and auto-instrumentation integration.
+- `packages/angular-render-scan/src/infrastructure/ui/`: presentation layer for toolbar, canvas outlines, labels, and FPS.
 - `demo/`: consumer app only. Do not move package behavior into the demo.
 
 ## Style Guide
@@ -32,7 +32,7 @@ This repository should be evolved as a small product-quality Angular instrumenta
 ## DDD Feature Flow
 
 1. Define the domain language in `feature.md`.
-2. Add or update types in `types.ts`.
+2. Add or update types in `src/domain/entities.ts`.
 3. Implement core behavior in the domain module that owns it.
 4. Add Angular integration only after the package-level behavior is clear.
 5. Update the demo to exercise the feature.

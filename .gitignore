@@ -1,6 +1,6 @@
 node_modules/
 dist/
-packages/angular-scan/dist/
+packages/angular-render-scan/dist/
 test-results/
 playwright-report/
 .angular/

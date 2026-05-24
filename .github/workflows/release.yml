@@ -1,12 +1,11 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
 
 jobs:
   release:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -30,13 +29,19 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Read package version
+        id: package
+        run: echo "version=$(node -p \"require('./packages/angular-render-scan/package.json').version\")" >> "$GITHUB_OUTPUT"
+
       - name: Publish to NPM
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        working-directory: packages/angular-scan
+        working-directory: packages/angular-render-scan
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.package.outputs.version }}
+          target_commitish: main
           generate_release_notes: true

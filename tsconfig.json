@@ -3,7 +3,7 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "angular-scan": ["packages/angular-scan/src/public-api.ts"]
+      "angular-render-scan": ["packages/angular-render-scan/src/public-api.ts"]
     },
     "outDir": "./dist/out-tsc",
     "strict": true,

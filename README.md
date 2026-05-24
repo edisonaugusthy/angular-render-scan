@@ -1,101 +1,293 @@
-# Angular Scan
+# Angular Render Scan
 
-Angular Scan is a developer tool visual overlay for tracking and debugging Angular change detection. It mirrors the React Scan style of experience: a floating toolbar, component outlines, performance heatmaps, compact labels, FPS, latest cycle timing, checked component count, and slowest component tracking.
+Angular Render Scan is a visual debugging overlay for Angular change detection. It is inspired by the React Scan experience: install it, run your app, interact with the UI, and see which Angular components are updating, how often they update, and how long they take.
 
-![Angular Scan demo](docs/assets/angular-scan-demo.png)
-
-## Project Docs
-
-- [agent.md](agent.md): Repo rules for DDD, type quality, style, and verification.
-- [feature.md](feature.md): Feature spec, domain model, and completed roadmap.
+![Angular Render Scan demo](docs/assets/angular-render-scan-demo.png)
 
 ## Features
 
-- **Auto-instrumentation**: Completely tracks every component automatically utilizing Angular's native internal `ɵsetProfiler` - no need to wrap elements or pollute your templates.
-- **Render Heatmap**: Visually distinguish performant components (Blue/Green) from slow components (Yellow/Red borders and labels) dynamically on the fly based on configurable MS thresholds.
-- **Draggable Toolbar**: A clean shadow-DOM toolbar that you can click and drag anywhere on your screen.
-- **Click-to-Inspect**: Hold `Cmd` (Mac) or `Ctrl` (Windows) and click on any highlighted component box. It automatically intercepts the click, fetches the actual underlying Angular component instance, and logs it to your console.
-- **Rich Console Logging**: Enable `log: true` to get beautifully collapsed `console.table()` reports after every render cycle detailing exact names, counts, and ms durations.
-- **Production Guard**: Uses Angular's native `isDevMode()` to ensure the scanner automatically shuts off in production environments.
+- Automatic Angular instrumentation through Angular dev-mode profiler hooks where available.
+- Provider-based setup for Angular apps.
+- Floating shadow-DOM toolbar with scan on/off, FPS, latest cycle time, changed component count, and slowest component.
+- Canvas highlights around updated components.
+- Compact component labels with component name, count, and latest duration.
+- Heatmap colors for fast, medium, and slow updates.
+- Optional console reports with `console.table()`.
+- Click-to-inspect support with `Cmd`/`Ctrl` + click on a highlighted component.
+- Draggable toolbar.
+- Production guard by default.
 
-## Public API
+## Install
+
+```sh
+npm install angular-render-scan
+```
+
+Angular Render Scan expects Angular 9+ as a peer dependency.
+
+## Quick Start
+
+Add `provideAngularRenderScan()` to your Angular bootstrap providers.
 
 ```ts
-import { getOptions, scan, setOptions, stop } from 'angular-scan';
+import { bootstrapApplication } from '@angular/platform-browser';
+import { provideAngularRenderScan } from 'angular-render-scan';
+import { AppComponent } from './app/app.component';
 
-scan({ enabled: true, showToolbar: true });
-setOptions({ log: true });
+bootstrapApplication(AppComponent, {
+  providers: [
+    provideAngularRenderScan({
+      enabled: true
+    })
+  ]
+});
+```
+
+Open your app in development mode and interact with the UI. Updated components will flash on screen and the toolbar will update live.
+
+## Script Usage
+
+The package also exposes a browser global build for script-tag style usage.
+
+```html
+<script src="https://unpkg.com/angular-render-scan/dist/auto.global.js"></script>
+```
+
+The global build starts the overlay with default options. For Angular component-level instrumentation, provider mode is still recommended because it has access to Angular app references and dev-mode hooks.
+
+## API
+
+```ts
+import { getOptions, scan, setOptions, stop } from 'angular-render-scan';
+
+scan();
+setOptions({ enabled: false });
+setOptions({ enabled: true, log: true });
 console.log(getOptions());
 stop();
 ```
 
+### `scan(options?)`
+
+Starts Angular Render Scan and creates the overlay if it is not already mounted.
+
 ```ts
-interface AngularScanOptions {
+scan({
+  enabled: true,
+  showToolbar: true,
+  animationSpeed: 'fast'
+});
+```
+
+### `setOptions(options)`
+
+Updates scanner options at runtime.
+
+```ts
+setOptions({
+  log: true,
+  animationSpeed: 'slow'
+});
+```
+
+### `getOptions()`
+
+Returns the current resolved options.
+
+```ts
+const options = getOptions();
+```
+
+### `stop()`
+
+Destroys the overlay and clears scanner state.
+
+```ts
+stop();
+```
+
+## Options
+
+```ts
+interface AngularRenderScanOptions {
   enabled?: boolean;
   showToolbar?: boolean;
   animationSpeed?: 'slow' | 'fast' | 'off';
   showFPS?: boolean;
   log?: boolean;
   dangerouslyForceRunInProduction?: boolean;
-  theme?: Partial<AngularScanTheme>;
+  theme?: Partial<AngularRenderScanTheme>;
   onCycleStart?: () => void;
   onRender?: (entry: AngularRenderEntry) => void;
   onCycleFinish?: (cycle: AngularRenderCycle) => void;
 }
 ```
 
-## Angular Usage
-
-Provider mode hooks into Angular automatically. Simply drop it into your application bootstrap logic:
+### Common Options
 
 ```ts
-import { bootstrapApplication } from '@angular/platform-browser';
-import { provideAngularScan } from 'angular-scan';
-
-bootstrapApplication(AppComponent, {
-  providers: [
-    provideAngularScan({
-      enabled: true,
-      showToolbar: true,
-      animationSpeed: 'fast',
-      log: true
-    })
-  ]
+provideAngularRenderScan({
+  enabled: true,
+  showToolbar: true,
+  showFPS: true,
+  animationSpeed: 'fast',
+  log: false
 });
 ```
 
-*(Legacy Mode: You can optionally still add `AngularScanMarkDirective` and `angularScanMark="Name"` to component host elements if you prefer manual tracking for highly specific elements.)*
+- `enabled`: turns scanning on or off.
+- `showToolbar`: shows or hides the floating toolbar.
+- `animationSpeed`: controls highlight fade speed. Use `'off'` to disable visual flashes.
+- `showFPS`: shows FPS in the toolbar.
+- `log`: prints cycle summaries to the console.
+- `dangerouslyForceRunInProduction`: allows the scanner to run outside Angular dev mode.
+
+## Callbacks
+
+```ts
+provideAngularRenderScan({
+  onCycleStart() {
+    console.log('cycle started');
+  },
+  onRender(entry) {
+    console.log(entry.name, entry.latestDuration);
+  },
+  onCycleFinish(cycle) {
+    console.log(cycle.renderedCount, cycle.slowest?.name);
+  }
+});
+```
+
+```ts
+interface AngularRenderEntry {
+  id: string;
+  name: string;
+  element: Element;
+  rect: DOMRect;
+  count: number;
+  latestDuration: number;
+  averageDuration: number;
+  latestCycleId: number;
+}
+
+interface AngularRenderCycle {
+  id: number;
+  startedAt: number;
+  finishedAt: number;
+  duration: number;
+  renderedCount: number;
+  slowest?: AngularRenderEntry;
+  entries: AngularRenderEntry[];
+}
+```
+
+## Theme
+
+Use `theme` to tune the highlight colors.
+
+```ts
+provideAngularRenderScan({
+  theme: {
+    fast: [147, 197, 253],
+    medium: [253, 224, 71],
+    slow: [239, 68, 68],
+    labelBackground: [124, 58, 237],
+    labelBackgroundSlow: [220, 38, 38]
+  }
+});
+```
+
+```ts
+interface AngularRenderScanTheme {
+  fast: readonly [number, number, number];
+  medium: readonly [number, number, number];
+  slow: readonly [number, number, number];
+  labelBackground: readonly [number, number, number];
+  labelBackgroundSlow: readonly [number, number, number];
+}
+```
+
+## Toolbar
+
+The toolbar shows:
+
+- scan on/off switch
+- FPS
+- latest cycle time
+- changed component count
+- slowest component
+- clear stats button
+
+Drag the toolbar to move it. Hold `Cmd` on macOS or `Ctrl` on Windows/Linux and click a highlighted component to inspect the Angular component instance in the console when Angular exposes it.
+
+## Manual Marking
+
+Automatic instrumentation is preferred. If you need a specific manual target, you can still mark an element with `AngularRenderScanMarkDirective`.
+
+```ts
+import { AngularRenderScanMarkDirective } from 'angular-render-scan';
+
+@Component({
+  standalone: true,
+  imports: [AngularRenderScanMarkDirective],
+  template: `
+    <section angularRenderScanMark="CartSummaryComponent">
+      ...
+    </section>
+  `
+})
+export class CartSummaryComponent {}
+```
+
+## Production Behavior
+
+Angular Render Scan is intended for development and demo debugging. Provider mode checks Angular `isDevMode()` and does not run in production unless explicitly enabled.
+
+```ts
+provideAngularRenderScan({
+  dangerouslyForceRunInProduction: true
+});
+```
+
+Use that option carefully. The scanner adds runtime instrumentation, DOM reads, canvas work, and console/debug behavior.
 
 ## Demo
 
-The demo runs an interactive E-Commerce Developer Store to showcase real-world data flows, `OnPush` components, signal updates, and simulated expensive operations.
+Run the local demo:
 
 ```sh
 npm install
 npm run dev
 ```
 
-Open `http://127.0.0.1:4200/`. The toolbar switch turns scanning on or off. You can drag the toolbar around, view dynamic updates on "Add to Cart", and test the Red Heatmap styling using the "AI Recommendations" recalculate button.
+Open:
 
-## Highlight Colors / Themes
-
-The overlay highlight palette is completely configurable via the `theme` object. You can pass in custom RGB values via `setOptions` or `provideAngularScan`.
-
-The default theme is:
-```ts
-const defaultTheme: AngularScanTheme = {
-  fast: [147, 197, 253],               // blue-300
-  medium: [253, 224, 71],              // yellow-300
-  slow: [239, 68, 68],                 // red-500
-  labelBackground: [124, 58, 237],     // violet-600
-  labelBackgroundSlow: [220, 38, 38],  // red-600
-};
+```txt
+http://127.0.0.1:4200/
 ```
 
-## Verification
+The demo includes signal updates, `OnPush` updates, nested components, and intentionally slow work to show the heatmap behavior.
+
+## Development
 
 ```sh
 npm run test
 npm run build
 npm run test:e2e
 ```
+
+Useful project docs:
+
+- [agent.md](agent.md): DDD rules, domain boundaries, type/style guide, and quality bar.
+- [feature.md](feature.md): feature spec, domain model, and roadmap.
+
+## Release
+
+Release is manual only.
+
+1. Go to GitHub Actions.
+2. Select `Release`.
+3. Choose the `main` branch.
+4. Click `Run workflow`.
+
+The workflow is guarded so it only runs from `main`. It installs dependencies, builds the package and demo, publishes `packages/angular-render-scan` to npm, and creates a GitHub release using the package version as the tag.
