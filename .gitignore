@@ -5,3 +5,4 @@ test-results/
 playwright-report/
 .angular/
 .DS_Store
+*.tgz

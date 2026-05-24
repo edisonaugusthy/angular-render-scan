@@ -35,8 +35,19 @@ jobs:
           VERSION=$(node -p "require('./packages/angular-render-scan/package.json').version")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Verify npm auth
+        run: |
+          npm config get registry
+          npm whoami
+          if npm view angular-render-scan@${{ steps.package.outputs.version }} version >/dev/null 2>&1; then
+            echo "angular-render-scan@${{ steps.package.outputs.version }} already exists on npm."
+            exit 1
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - name: Publish to NPM
-        run: npm publish --access public
+        run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         working-directory: packages/angular-render-scan
