@@ -1,9 +1,5 @@
 import { FpsMeter } from './fps';
-import type { AngularRenderCycle, AngularRenderEntry, AngularScanResolvedOptions } from './types';
-
-const HIGHLIGHT_STROKE = [147, 197, 253] as const;
-const HIGHLIGHT_GLOW = [216, 180, 254] as const;
-const LABEL_BACKGROUND = [124, 58, 237] as const;
+import type { AngularRenderCycle, AngularRenderEntry, AngularScanResolvedOptions } from '../../domain/entities';
 
 interface ActiveHighlight {
   entry: AngularRenderEntry;
@@ -30,13 +26,20 @@ const TOOLBAR_CSS = `
     font: 500 12px/1.2 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     pointer-events: auto;
     backdrop-filter: blur(12px);
+    cursor: grab;
+    user-select: none;
+  }
+  .toolbar:active {
+    cursor: grabbing;
+  }
+  .switch, .clear-btn {
+    cursor: pointer;
   }
   .switch {
     display: inline-flex;
     align-items: center;
     gap: 7px;
     min-width: 78px;
-    cursor: pointer;
     user-select: none;
   }
   .switch input {
@@ -77,6 +80,20 @@ const TOOLBAR_CSS = `
   .metric { display: grid; gap: 2px; min-width: 54px; }
   .label { color: #64748b; font-size: 10px; text-transform: uppercase; }
   .value { color: #111827; white-space: nowrap; }
+  .clear-btn {
+    background: none;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font: inherit;
+    font-size: 11px;
+    color: #475569;
+    transition: all 0.2s;
+  }
+  .clear-btn:hover {
+    background: #f1f5f9;
+    color: #0f172a;
+  }
 `;
 
 export class AngularScanOverlay {
@@ -93,6 +110,12 @@ export class AngularScanOverlay {
   private highlights: Array<{ entry: AngularRenderEntry; expiresAt: number }> = [];
   private options: AngularScanResolvedOptions;
 
+  private toolbarX = 16;
+  private toolbarY = 16;
+  private isDragging = false;
+  private dragStartX = 0;
+  private dragStartY = 0;
+
   constructor(options: AngularScanResolvedOptions, private readonly onToggle: (enabled: boolean) => void) {
     this.options = options;
     this.host.style.pointerEvents = 'none';
@@ -102,11 +125,96 @@ export class AngularScanOverlay {
       'z-index:2147483646',
       'pointer-events:none'
     ].join(';');
-    this.shadow.innerHTML = `<style>${TOOLBAR_CSS}</style><div id="toolbar"></div>`;
+    this.shadow.innerHTML = `<style>${TOOLBAR_CSS}</style><div id="toolbar-container"></div>`;
     document.documentElement.append(this.canvas, this.host);
     this.resize();
     window.addEventListener('resize', this.resize);
     this.loop();
+    this.setupDragListeners();
+  }
+
+  private setupDragListeners(): void {
+    // Click-to-inspect listener
+    this.globalClickListener = (e: MouseEvent) => {
+      if (!e.metaKey && !e.ctrlKey) return;
+      if (!this.options.enabled) return;
+
+      const x = e.clientX;
+      const y = e.clientY;
+      const now = performance.now();
+      const activeHighlights = this.getActiveHighlights(now);
+
+      // Find the smallest clicked highlight
+      const clicked = activeHighlights
+        .filter(h => x >= h.rect.left && x <= h.rect.right && y >= h.rect.top && y <= h.rect.bottom)
+        .sort((a, b) => area(a.rect) - area(b.rect))[0];
+
+      if (clicked) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const globalNg = (window as any).ng;
+        if (globalNg && globalNg.getComponent) {
+          const component = globalNg.getComponent(clicked.entry.element);
+          console.info(`[angular-scan] Inspecting <${clicked.entry.name}>:`, component || clicked.entry.element);
+        } else {
+          console.info(`[angular-scan] Inspecting <${clicked.entry.name}> element:`, clicked.entry.element);
+        }
+      }
+    };
+    
+    document.addEventListener('click', this.globalClickListener, { capture: true });
+    
+    // Add cleanup to destroy method later...
+    
+    const handleDragStart = (e: Event) => {
+      const event = e as MouseEvent | TouchEvent;
+      const target = event.target as HTMLElement;
+      if (target.closest('.switch') || target.closest('.clear-btn')) {
+        return; // Don't drag if clicking buttons
+      }
+      const toolbar = this.shadow.querySelector('.toolbar');
+      if (target.closest('.toolbar')) {
+        this.isDragging = true;
+        const clientX = 'touches' in event ? event.touches[0].clientX : event.clientX;
+        const clientY = 'touches' in event ? event.touches[0].clientY : event.clientY;
+        this.dragStartX = clientX - (window.innerWidth - this.toolbarX);
+        this.dragStartY = clientY - (window.innerHeight - this.toolbarY);
+      }
+    };
+
+    const handleDragMove = (e: MouseEvent | TouchEvent) => {
+      if (!this.isDragging) return;
+      e.preventDefault();
+      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+      const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+      
+      const toolbar = this.shadow.querySelector('.toolbar') as HTMLElement;
+      if (toolbar) {
+        const rect = toolbar.getBoundingClientRect();
+        this.toolbarX = window.innerWidth - (clientX - this.dragStartX);
+        this.toolbarY = window.innerHeight - (clientY - this.dragStartY);
+        
+        // Bounds checking
+        this.toolbarX = Math.max(16, Math.min(this.toolbarX, window.innerWidth - rect.width - 16));
+        this.toolbarY = Math.max(16, Math.min(this.toolbarY, window.innerHeight - rect.height - 16));
+        
+        toolbar.style.right = `${this.toolbarX}px`;
+        toolbar.style.bottom = `${this.toolbarY}px`;
+      }
+    };
+
+    const handleDragEnd = () => {
+      this.isDragging = false;
+    };
+
+    this.shadow.addEventListener('mousedown', handleDragStart);
+    window.addEventListener('mousemove', handleDragMove, { passive: false });
+    window.addEventListener('mouseup', handleDragEnd);
+    
+    this.shadow.addEventListener('touchstart', handleDragStart, { passive: true });
+    window.addEventListener('touchmove', handleDragMove, { passive: false });
+    window.addEventListener('touchend', handleDragEnd);
   }
 
   updateOptions(options: AngularScanResolvedOptions): void {
@@ -124,9 +232,14 @@ export class AngularScanOverlay {
     this.renderToolbar();
   }
 
+  private globalClickListener?: (e: MouseEvent) => void;
+
   destroy(): void {
     cancelAnimationFrame(this.raf);
     window.removeEventListener('resize', this.resize);
+    if (this.globalClickListener) {
+      document.removeEventListener('click', this.globalClickListener, { capture: true });
+    }
     this.host.remove();
     this.canvas.remove();
   }
@@ -167,12 +280,16 @@ export class AngularScanOverlay {
     const activeHighlights = this.getActiveHighlights(now);
     const labelledIds = this.getLabelledEntryIds(activeHighlights);
 
+    // Sort activeHighlights so parents are drawn first, then children, ensuring child labels stay on top if overlapping
+    // We already sort by area descending in getActiveHighlights, which is good.
+
     for (const { entry, expiresAt, rect } of activeHighlights) {
       const alpha = Math.max(0.18, Math.min(1, (expiresAt - now) / 520));
-      this.drawOutline(rect, alpha);
+      
+      this.drawOutline(rect, alpha, entry.latestDuration);
 
       if (labelledIds.has(entry.id)) {
-        this.drawLabel(entry, rect, alpha);
+        this.drawLabel(entry, rect, alpha, entry.latestDuration);
       }
     }
   }
@@ -194,37 +311,44 @@ export class AngularScanOverlay {
     const labelled = new Set<string>();
 
     for (const highlight of highlights) {
-      const containsAnotherUpdatedComponent = highlights.some((candidate) => {
-        return candidate.entry.id !== highlight.entry.id && containsRect(highlight.rect, candidate.rect);
-      });
-
-      if (!containsAnotherUpdatedComponent) {
-        labelled.add(highlight.entry.id);
-      }
+      // Remove containsAnotherUpdatedComponent check to allow parent and child changes to show values at the same time
+      labelled.add(highlight.entry.id);
     }
 
     return labelled;
   }
 
-  private drawOutline(rect: DOMRect, alpha: number): void {
+  private getColorForDuration(duration: number, type: 'stroke' | 'bg'): readonly [number, number, number] {
+    const { theme } = this.options;
+    if (duration > 15) return type === 'bg' ? theme.labelBackgroundSlow! : theme.slow!;
+    if (duration > 5) return type === 'bg' ? theme.labelBackground! : theme.medium!;
+    return type === 'bg' ? theme.labelBackground! : theme.fast!;
+  }
+
+  private drawOutline(rect: DOMRect, alpha: number, duration: number): void {
     if (!this.context) {
       return;
     }
 
-    this.context.shadowColor = rgba(HIGHLIGHT_GLOW, Math.min(0.45, alpha));
+    const strokeColor = this.getColorForDuration(duration, 'stroke');
+    const glowColor = strokeColor; // Use the same color for glow but with alpha
+
+    this.context.shadowColor = rgba(glowColor, Math.min(0.45, alpha));
     this.context.shadowBlur = 16;
-    this.context.strokeStyle = rgba(HIGHLIGHT_STROKE, alpha);
+    this.context.strokeStyle = rgba(strokeColor, alpha);
     this.context.lineWidth = 2;
     this.context.strokeRect(rect.left, rect.top, rect.width, rect.height);
     this.context.shadowBlur = 0;
   }
 
-  private drawLabel(entry: AngularRenderEntry, rect: DOMRect, alpha: number): void {
+  private drawLabel(entry: AngularRenderEntry, rect: DOMRect, alpha: number, duration: number): void {
     if (!this.context) {
       return;
     }
 
-    this.context.fillStyle = rgba(LABEL_BACKGROUND, Math.min(0.9, alpha + 0.1));
+    const bgColor = this.getColorForDuration(duration, 'bg');
+
+    this.context.fillStyle = rgba(bgColor, Math.min(0.9, alpha + 0.1));
     this.context.font = '600 11px ui-sans-serif, system-ui, sans-serif';
     const maxLabelWidth = Math.max(56, Math.min(rect.width, window.innerWidth - rect.left - 8));
     const label = truncateText(
@@ -241,20 +365,20 @@ export class AngularScanOverlay {
   }
 
   private renderToolbar(): void {
-    const toolbar = this.shadow.getElementById('toolbar');
-    if (!toolbar) {
+    const container = this.shadow.getElementById('toolbar-container');
+    if (!container) {
       return;
     }
 
     if (!this.options.showToolbar) {
-      this.replaceToolbarHtml(toolbar, '');
+      this.replaceToolbarHtml(container, '');
       return;
     }
 
     const cycle = this.latestCycle;
     const displayedFps = this.latestFps || this.fps.value;
-    this.replaceToolbarHtml(toolbar, `
-      <div class="toolbar">
+    const htmlChanged = this.replaceToolbarHtml(container, `
+      <div class="toolbar" style="right: ${this.toolbarX}px; bottom: ${this.toolbarY}px;">
         <label class="switch">
           <input type="checkbox" ${this.options.enabled ? 'checked' : ''} aria-label="Angular Scan enabled" />
           <span class="track" aria-hidden="true"></span>
@@ -264,10 +388,27 @@ export class AngularScanOverlay {
         ${this.metric('Cycle', cycle ? `${cycle.duration.toFixed(1)}ms` : '-')}
         ${this.metric('Count', cycle ? String(cycle.renderedCount) : '0')}
         ${this.metric('Slowest', cycle?.slowest ? cycle.slowest.name : '-')}
+        <button class="clear-btn" aria-label="Clear stats">Clear</button>
       </div>
     `);
-    toolbar.querySelector('input')?.addEventListener('change', (event) => {
+    
+    if (!htmlChanged) {
+      return;
+    }
+    
+    const toolbarEl = container.querySelector('.toolbar');
+    
+    toolbarEl?.querySelector('input')?.addEventListener('change', (event) => {
       this.onToggle((event.target as HTMLInputElement).checked);
+    }, { once: true });
+    
+    toolbarEl?.querySelector('.clear-btn')?.addEventListener('click', () => {
+      import('../../application/stats').then(m => {
+        m.clearStats();
+        this.latestCycle = undefined;
+        this.highlights = [];
+        this.renderToolbar();
+      });
     }, { once: true });
   }
 
@@ -275,13 +416,14 @@ export class AngularScanOverlay {
     return `<span class="metric"><span class="label">${label}</span><span class="value">${value}</span></span>`;
   }
 
-  private replaceToolbarHtml(toolbar: HTMLElement, html: string): void {
+  private replaceToolbarHtml(toolbar: HTMLElement, html: string): boolean {
     if (this.lastToolbarHtml === html) {
-      return;
+      return false;
     }
 
     this.lastToolbarHtml = html;
     toolbar.innerHTML = html;
+    return true;
   }
 }
 

@@ -1,13 +1,22 @@
 # Angular Scan
 
-Angular Scan is a small investor-demo focused visual overlay for Angular change detection. It mirrors the React Scan style of experience: a floating toolbar, component outlines, compact labels, FPS, latest cycle timing, checked component count, and slowest component.
+Angular Scan is a developer tool visual overlay for tracking and debugging Angular change detection. It mirrors the React Scan style of experience: a floating toolbar, component outlines, performance heatmaps, compact labels, FPS, latest cycle timing, checked component count, and slowest component tracking.
 
 ![Angular Scan demo](docs/assets/angular-scan-demo.png)
 
 ## Project Docs
 
-- [agent.md](agent.md): repo rules for DDD, type quality, style, and verification.
-- [feature.md](feature.md): feature spec, current domain model, next candidates, and highlight color guidance.
+- [agent.md](agent.md): Repo rules for DDD, type quality, style, and verification.
+- [feature.md](feature.md): Feature spec, domain model, and completed roadmap.
+
+## Features
+
+- **Auto-instrumentation**: Completely tracks every component automatically utilizing Angular's native internal `ɵsetProfiler` - no need to wrap elements or pollute your templates.
+- **Render Heatmap**: Visually distinguish performant components (Blue/Green) from slow components (Yellow/Red borders and labels) dynamically on the fly based on configurable MS thresholds.
+- **Draggable Toolbar**: A clean shadow-DOM toolbar that you can click and drag anywhere on your screen.
+- **Click-to-Inspect**: Hold `Cmd` (Mac) or `Ctrl` (Windows) and click on any highlighted component box. It automatically intercepts the click, fetches the actual underlying Angular component instance, and logs it to your console.
+- **Rich Console Logging**: Enable `log: true` to get beautifully collapsed `console.table()` reports after every render cycle detailing exact names, counts, and ms durations.
+- **Production Guard**: Uses Angular's native `isDevMode()` to ensure the scanner automatically shuts off in production environments.
 
 ## Public API
 
@@ -28,6 +37,7 @@ interface AngularScanOptions {
   showFPS?: boolean;
   log?: boolean;
   dangerouslyForceRunInProduction?: boolean;
+  theme?: Partial<AngularScanTheme>;
   onCycleStart?: () => void;
   onRender?: (entry: AngularRenderEntry) => void;
   onCycleFinish?: (cycle: AngularRenderCycle) => void;
@@ -36,7 +46,7 @@ interface AngularScanOptions {
 
 ## Angular Usage
 
-Provider mode gives the demo reliable cycle timing by wrapping `ApplicationRef.tick()`.
+Provider mode hooks into Angular automatically. Simply drop it into your application bootstrap logic:
 
 ```ts
 import { bootstrapApplication } from '@angular/platform-browser';
@@ -47,44 +57,40 @@ bootstrapApplication(AppComponent, {
     provideAngularScan({
       enabled: true,
       showToolbar: true,
-      animationSpeed: 'fast'
+      animationSpeed: 'fast',
+      log: true
     })
   ]
 });
 ```
 
-For the v1 investor demo, add `AngularScanMarkDirective` to component host elements that should report per-component labels and durations:
-
-```html
-<section angularScanMark="SlowComponent">
-  ...
-</section>
-```
-
-The standalone `scan()` call still starts the overlay for script or npm usage. Deep automatic Ivy component hook patching is intentionally not claimed as complete in this first build.
+*(Legacy Mode: You can optionally still add `AngularScanMarkDirective` and `angularScanMark="Name"` to component host elements if you prefer manual tracking for highly specific elements.)*
 
 ## Demo
+
+The demo runs an interactive E-Commerce Developer Store to showcase real-world data flows, `OnPush` components, signal updates, and simulated expensive operations.
 
 ```sh
 npm install
 npm run dev
 ```
 
-Open `http://127.0.0.1:4200/`, then click the counter, nested child, slow component, OnPush, and signal buttons. The overlay flashes highlighted components and updates toolbar metrics.
+Open `http://127.0.0.1:4200/`. The toolbar switch turns scanning on or off. You can drag the toolbar around, view dynamic updates on "Add to Cart", and test the Red Heatmap styling using the "AI Recommendations" recalculate button.
 
-The toolbar switch turns scanning on or off. Marked Angular components update live after button clicks, including nested item components in the demo. The overlay reports visible updates, so a focused OnPush update highlights the OnPush component instead of every component that Angular checked.
+## Highlight Colors / Themes
 
-## Highlight Colors
+The overlay highlight palette is completely configurable via the `theme` object. You can pass in custom RGB values via `setOptions` or `provideAngularScan`.
 
-The overlay highlight palette is intentionally light blue/violet. Update the tokens in `packages/angular-scan/src/overlay.ts` when changing the scan flash style:
-
+The default theme is:
 ```ts
-const HIGHLIGHT_STROKE = [147, 197, 253] as const;
-const HIGHLIGHT_GLOW = [216, 180, 254] as const;
-const LABEL_BACKGROUND = [124, 58, 237] as const;
+const defaultTheme: AngularScanTheme = {
+  fast: [147, 197, 253],               // blue-300
+  medium: [253, 224, 71],              // yellow-300
+  slow: [239, 68, 68],                 // red-500
+  labelBackground: [124, 58, 237],     // violet-600
+  labelBackgroundSlow: [220, 38, 38],  // red-600
+};
 ```
-
-Keep the alpha fade in the paint loop so fast and slow animations continue to feel smooth.
 
 ## Verification
 

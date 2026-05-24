@@ -1,4 +1,4 @@
-import type { AngularRenderCycle, AngularRenderEntry, AngularScanRegisteredComponent } from './types';
+import type { AngularRenderCycle, AngularRenderEntry, AngularScanRegisteredComponent } from '../domain/entities';
 
 interface ComponentStats extends AngularScanRegisteredComponent {
   totalDuration: number;
@@ -64,6 +64,15 @@ export function finishCycle(id: number, startedAt: number, finishedAt: number): 
 export function resetStats(): void {
   cycleId = 0;
   components.clear();
+}
+
+export function clearStats(): void {
+  for (const stats of components.values()) {
+    stats.totalChecks = 0;
+    stats.totalDuration = 0;
+    stats.latestDuration = 0;
+    stats.latestCycleId = 0;
+  }
 }
 
 function toEntry(stats: ComponentStats): AngularRenderEntry {

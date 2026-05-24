@@ -1,5 +1,13 @@
 export type AngularScanAnimationSpeed = 'slow' | 'fast' | 'off';
 
+export interface AngularScanTheme {
+  fast: readonly [number, number, number];
+  medium: readonly [number, number, number];
+  slow: readonly [number, number, number];
+  labelBackground: readonly [number, number, number];
+  labelBackgroundSlow: readonly [number, number, number];
+}
+
 export interface AngularRenderEntry {
   id: string;
   name: string;
@@ -28,12 +36,14 @@ export interface AngularScanOptions {
   showFPS?: boolean;
   log?: boolean;
   dangerouslyForceRunInProduction?: boolean;
+  theme?: Partial<AngularScanTheme>;
   onCycleStart?: () => void;
   onRender?: (entry: AngularRenderEntry) => void;
   onCycleFinish?: (cycle: AngularRenderCycle) => void;
 }
 
-export interface AngularScanResolvedOptions extends Required<Omit<AngularScanOptions, 'onCycleStart' | 'onRender' | 'onCycleFinish'>> {
+export interface AngularScanResolvedOptions extends Required<Omit<AngularScanOptions, 'onCycleStart' | 'onRender' | 'onCycleFinish' | 'theme'>> {
+  theme: AngularScanTheme;
   onCycleStart?: () => void;
   onRender?: (entry: AngularRenderEntry) => void;
   onCycleFinish?: (cycle: AngularRenderCycle) => void;
