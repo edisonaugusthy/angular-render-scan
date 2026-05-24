@@ -2,6 +2,7 @@ import { APP_INITIALIZER, ApplicationRef, Directive, ElementRef, EnvironmentProv
 import { beginCycle, currentCycleId, endCycle, ensureCycleForComponentCheck, scan, setOptions } from '../../application/runtime';
 import { recordComponentCheck, registerComponent, unregisterComponent } from '../../application/stats';
 import type { AngularScanOptions } from '../../domain/entities';
+import { setupAutoInstrumentation } from './auto-instrumentation';
 
 export const ANGULAR_SCAN_OPTIONS = new InjectionToken<AngularScanOptions>('ANGULAR_SCAN_OPTIONS');
 
@@ -17,7 +18,6 @@ export class AngularScanMarkDirective implements OnDestroy {
   private readonly id = `ng-scan-${++nextComponentId}`;
   private checkStartedAt = 0;
   private childrenDuration = 0;
-  private renderedSignature = '';
   private name = this.inferName();
 
   @Input('angularScanMark')
@@ -51,12 +51,6 @@ export class AngularScanMarkDirective implements OnDestroy {
       return;
     }
 
-    const nextSignature = this.getRenderedSignature();
-    if (this.renderedSignature === nextSignature) {
-      return;
-    }
-
-    this.renderedSignature = nextSignature;
     const entry = recordComponentCheck(this.id, selfDuration, cycleId);
     if (entry) {
       window.dispatchEvent(new CustomEvent('angular-scan:render', { detail: entry }));
@@ -83,18 +77,6 @@ export class AngularScanMarkDirective implements OnDestroy {
       .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
       .join('');
   }
-
-  private getRenderedSignature(): string {
-    const rect = this.element.getBoundingClientRect();
-    return [
-      normalizeText(this.element.textContent ?? ''),
-      Math.round(rect.left),
-      Math.round(rect.top),
-      Math.round(rect.width),
-      Math.round(rect.height),
-      this.element.childElementCount
-    ].join('|');
-  }
 }
 
 function normalizeText(text: string): string {
@@ -120,6 +102,7 @@ function angularScanInitializerProvider(): Provider {
       scan(options);
       patchApplicationRef(appRef);
       registerGlobalApplicationRef(appRef);
+      setupAutoInstrumentation();
     }
   };
 }
