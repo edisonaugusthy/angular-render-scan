@@ -9,6 +9,12 @@ let activeCycleStartedAt = 0;
 let lastCycle: AngularRenderCycle | undefined;
 let implicitCycleScheduled = false;
 
+let scheduleTask = (fn: () => void) => queueMicrotask(fn);
+
+export function setTaskScheduler(scheduler: (fn: () => void) => void) {
+  scheduleTask = scheduler;
+}
+
 export function scan(options?: AngularScanOptions): void {
   const resolved = setResolvedOptions(resolveOptions(options));
   if (!overlay && typeof document !== 'undefined') {
@@ -108,7 +114,7 @@ export function ensureCycleForComponentCheck(): number {
   }
 
   implicitCycleScheduled = true;
-  queueMicrotask(() => {
+  scheduleTask(() => {
     if (activeCycleId === cycleId) {
       endCycle(cycleId);
     }

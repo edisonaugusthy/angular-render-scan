@@ -1,5 +1,5 @@
-import { APP_INITIALIZER, ApplicationRef, Directive, ElementRef, EnvironmentProviders, InjectionToken, Input, OnDestroy, Provider, inject, makeEnvironmentProviders, isDevMode } from '@angular/core';
-import { beginCycle, currentCycleId, endCycle, ensureCycleForComponentCheck, scan, setOptions } from '../../application/runtime';
+import { APP_INITIALIZER, ApplicationRef, Directive, ElementRef, EnvironmentProviders, InjectionToken, Input, OnDestroy, Provider, inject, makeEnvironmentProviders, isDevMode, NgZone } from '@angular/core';
+import { beginCycle, currentCycleId, endCycle, ensureCycleForComponentCheck, scan, setOptions, setTaskScheduler } from '../../application/runtime';
 import { recordComponentCheck, registerComponent, unregisterComponent } from '../../application/stats';
 import type { AngularScanOptions } from '../../domain/entities';
 import { setupAutoInstrumentation } from './auto-instrumentation';
@@ -94,12 +94,23 @@ function angularScanInitializerProvider(): Provider {
   return {
     provide: APP_INITIALIZER,
     multi: true,
-    deps: [ApplicationRef, ANGULAR_SCAN_OPTIONS],
-    useFactory: (appRef: ApplicationRef, options: AngularScanOptions) => () => {
+    deps: [ApplicationRef, ANGULAR_SCAN_OPTIONS, NgZone],
+    useFactory: (appRef: ApplicationRef, options: AngularScanOptions, ngZone: NgZone) => () => {
       if (!isDevMode() && !options.dangerouslyForceRunInProduction) {
         return;
       }
-      scan(options);
+      
+      setTaskScheduler((fn) => {
+        ngZone.runOutsideAngular(() => {
+          // Promise.resolve().then() is generally safer in Zone.js to escape microtask tracking
+          // if queued from outside the zone, whereas queueMicrotask might still be patched tightly.
+          Promise.resolve().then(fn);
+        });
+      });
+
+      ngZone.runOutsideAngular(() => {
+        scan(options);
+      });
       patchApplicationRef(appRef);
       registerGlobalApplicationRef(appRef);
       setupAutoInstrumentation();
