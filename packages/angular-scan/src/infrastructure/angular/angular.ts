@@ -7,16 +7,15 @@ export const ANGULAR_SCAN_OPTIONS = new InjectionToken<AngularScanOptions>('ANGU
 
 let nextComponentId = 0;
 
-let currentCheckDurationStack: number[] = [];
-
 @Directive({
   selector: '[angularScanMark]',
   standalone: true
 })
 export class AngularScanMarkDirective implements OnDestroy {
   private readonly element = inject<ElementRef<Element>>(ElementRef).nativeElement;
+  private readonly parent = inject(AngularScanMarkDirective, { optional: true, skipSelf: true });
   private readonly id = `ng-scan-${++nextComponentId}`;
-  private checkStartedAt = performance.now();
+  private checkStartedAt = 0;
   private childrenDuration = 0;
   private renderedSignature = '';
   private name = this.inferName();
@@ -37,18 +36,15 @@ export class AngularScanMarkDirective implements OnDestroy {
     ensureCycleForComponentCheck();
     this.checkStartedAt = performance.now();
     this.childrenDuration = 0;
-    currentCheckDurationStack.push(0);
   }
 
   ngAfterViewChecked(): void {
     const cycleId = currentCycleId();
     const totalDuration = performance.now() - this.checkStartedAt;
-    const childDuration = currentCheckDurationStack.pop() || 0;
-    const selfDuration = Math.max(0, totalDuration - childDuration);
+    const selfDuration = Math.max(0, totalDuration - this.childrenDuration);
 
-    // Add our total duration to the parent's childrenDuration
-    if (currentCheckDurationStack.length > 0) {
-      currentCheckDurationStack[currentCheckDurationStack.length - 1] += totalDuration;
+    if (this.parent) {
+      this.parent.childrenDuration += totalDuration;
     }
 
     if (!cycleId) {
