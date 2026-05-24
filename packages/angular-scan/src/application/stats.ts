@@ -1,4 +1,4 @@
-import type { AngularRenderCycle, AngularRenderEntry, AngularScanRegisteredComponent } from './types';
+import type { AngularRenderCycle, AngularRenderEntry, AngularScanRegisteredComponent } from '../domain/entities';
 
 interface ComponentStats extends AngularScanRegisteredComponent {
   totalDuration: number;

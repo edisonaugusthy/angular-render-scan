@@ -11,7 +11,7 @@ export default defineConfig([
     external: ['@angular/core', '@angular/common']
   },
   {
-    entry: { 'auto.global': 'packages/angular-scan/src/auto.ts' },
+    entry: { 'auto.global': 'packages/angular-scan/src/infrastructure/angular/auto.ts' },
     format: ['iife'],
     globalName: 'AngularScan',
     sourcemap: true,

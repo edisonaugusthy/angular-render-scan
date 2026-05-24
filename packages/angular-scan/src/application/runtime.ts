@@ -1,7 +1,7 @@
-import { AngularScanOverlay } from './overlay';
-import { getResolvedOptions, resolveOptions, setResolvedOptions } from './options';
+import { AngularScanOverlay } from '../infrastructure/ui/overlay';
+import { getResolvedOptions, resolveOptions, setResolvedOptions } from '../domain/options';
 import { finishCycle, resetStats, startCycle } from './stats';
-import type { AngularRenderCycle, AngularScanOptions } from './types';
+import type { AngularRenderCycle, AngularScanOptions } from '../domain/entities';
 
 let overlay: AngularScanOverlay | undefined;
 let activeCycleId = 0;
@@ -34,6 +34,14 @@ export function stop(): void {
   activeCycleId = 0;
   activeCycleStartedAt = 0;
   implicitCycleScheduled = false;
+  
+  if (typeof window !== 'undefined') {
+    const globalWindow = window as any;
+    if (globalWindow.__ANGULAR_SCAN_APP_REF__) {
+      // Assuming restoreApplicationRef was called via the global stop or we can't easily reach it here without circular deps.
+      // But we can dispatch an event or just let the global handle it.
+    }
+  }
 }
 
 export function beginCycle(): number {
@@ -64,13 +72,16 @@ export function endCycle(cycleId = activeCycleId): AngularRenderCycle | undefine
   options.onCycleFinish?.(cycle);
   overlay?.showCycle(cycle);
 
-  if (options.log) {
-    console.info('[angular-scan] cycle', {
-      id: cycle.id,
-      duration: cycle.duration,
-      renderedCount: cycle.renderedCount,
-      slowest: cycle.slowest?.name
-    });
+  if (options.log && cycle.entries.length > 0) {
+    console.groupCollapsed(`%c[angular-scan] cycle ${cycle.id} - ${cycle.duration.toFixed(2)}ms, ${cycle.renderedCount} components`, 'color: #7c3aed; font-weight: bold;');
+    const tableData = cycle.entries.map((e) => ({
+      Name: e.name,
+      Count: e.count,
+      'Time (ms)': Number(e.latestDuration.toFixed(2)),
+      'Avg (ms)': Number(e.averageDuration.toFixed(2))
+    }));
+    console.table(tableData);
+    console.groupEnd();
   }
 
   if (activeCycleId === cycleId) {
