@@ -66,6 +66,15 @@ export function resetStats(): void {
   components.clear();
 }
 
+export function clearStats(): void {
+  for (const stats of components.values()) {
+    stats.totalChecks = 0;
+    stats.totalDuration = 0;
+    stats.latestDuration = 0;
+    stats.latestCycleId = 0;
+  }
+}
+
 function toEntry(stats: ComponentStats): AngularRenderEntry {
   return {
     id: stats.id,

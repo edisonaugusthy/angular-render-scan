@@ -377,7 +377,7 @@ export class AngularScanOverlay {
 
     const cycle = this.latestCycle;
     const displayedFps = this.latestFps || this.fps.value;
-    this.replaceToolbarHtml(container, `
+    const htmlChanged = this.replaceToolbarHtml(container, `
       <div class="toolbar" style="right: ${this.toolbarX}px; bottom: ${this.toolbarY}px;">
         <label class="switch">
           <input type="checkbox" ${this.options.enabled ? 'checked' : ''} aria-label="Angular Scan enabled" />
@@ -392,6 +392,10 @@ export class AngularScanOverlay {
       </div>
     `);
     
+    if (!htmlChanged) {
+      return;
+    }
+    
     const toolbarEl = container.querySelector('.toolbar');
     
     toolbarEl?.querySelector('input')?.addEventListener('change', (event) => {
@@ -399,10 +403,12 @@ export class AngularScanOverlay {
     }, { once: true });
     
     toolbarEl?.querySelector('.clear-btn')?.addEventListener('click', () => {
-      import('../../application/stats').then(m => m.resetStats());
-      this.latestCycle = undefined;
-      this.highlights = [];
-      this.renderToolbar();
+      import('../../application/stats').then(m => {
+        m.clearStats();
+        this.latestCycle = undefined;
+        this.highlights = [];
+        this.renderToolbar();
+      });
     }, { once: true });
   }
 
@@ -410,13 +416,14 @@ export class AngularScanOverlay {
     return `<span class="metric"><span class="label">${label}</span><span class="value">${value}</span></span>`;
   }
 
-  private replaceToolbarHtml(toolbar: HTMLElement, html: string): void {
+  private replaceToolbarHtml(toolbar: HTMLElement, html: string): boolean {
     if (this.lastToolbarHtml === html) {
-      return;
+      return false;
     }
 
     this.lastToolbarHtml = html;
     toolbar.innerHTML = html;
+    return true;
   }
 }
 
