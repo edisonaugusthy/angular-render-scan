@@ -31,7 +31,9 @@ jobs:
 
       - name: Read package version
         id: package
-        run: echo "version=$(node -p \"require('./packages/angular-render-scan/package.json').version\")" >> "$GITHUB_OUTPUT"
+        run: |
+          VERSION=$(node -p "require('./packages/angular-render-scan/package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Publish to NPM
         run: npm publish --access public
