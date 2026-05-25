@@ -1,7 +1,23 @@
 {
   "name": "angular-render-scan",
   "version": "0.1.0",
-  "description": "Visual Angular change-detection scanner for investor demos.",
+  "description": "Visual Angular change-detection scanner for debugging component renders.",
+  "keywords": [
+    "angular",
+    "change-detection",
+    "performance",
+    "profiler",
+    "render",
+    "scanner",
+    "debugging",
+    "devtools",
+    "signals"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/edisonaugusthy/angular-render-scan#readme",
+  "bugs": {
+    "url": "https://github.com/edisonaugusthy/angular-render-scan/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/edisonaugusthy/angular-render-scan.git",
