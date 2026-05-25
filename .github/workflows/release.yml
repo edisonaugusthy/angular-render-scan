@@ -18,10 +18,11 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 24
           registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
 
       - name: Install dependencies
         run: npm ci
@@ -35,19 +36,22 @@ jobs:
           VERSION=$(node -p "require('./packages/angular-render-scan/package.json').version")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Verify npm auth
+      - name: Verify package availability
         run: |
           npm config get registry
-          npm whoami
           if npm view angular-render-scan@${{ steps.package.outputs.version }} version >/dev/null 2>&1; then
             echo "angular-render-scan@${{ steps.package.outputs.version }} already exists on npm."
             exit 1
           fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish to NPM
-        run: npm publish --access public --provenance
+        run: |
+          if [ -n "${NODE_AUTH_TOKEN:-}" ]; then
+            npm whoami
+          else
+            echo "NPM_TOKEN is not set; npm publish will use trusted publishing/OIDC if it is configured for this package."
+          fi
+          npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         working-directory: packages/angular-render-scan
