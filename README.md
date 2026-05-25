@@ -283,16 +283,19 @@ Useful project docs:
 
 ## Release
 
-Release is manual only.
+Release runs automatically when changes are pushed to `main`. The workflow bumps
+`packages/angular-render-scan/package.json` by one patch version, commits that
+version bump back to `main`, publishes the package to npm, and creates a GitHub
+release for the new version.
 
 Before the first automated publish, add a valid npm publish token as the GitHub
 Actions secret `NPM_TOKEN`. After the package exists on npm, you can instead
 configure npm trusted publishing for repository `edisonaugusthy/angular-render-scan`
 and workflow filename `release.yml`.
 
+To publish manually:
+
 1. Go to GitHub Actions.
 2. Select `Release`.
 3. Choose the `main` branch.
 4. Click `Run workflow`.
-
-The workflow is guarded so it only runs from `main`. It installs dependencies, builds the package and demo, publishes `packages/angular-render-scan` to npm, and creates a GitHub release using the package version as the tag.

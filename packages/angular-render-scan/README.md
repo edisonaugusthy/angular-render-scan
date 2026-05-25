@@ -2,6 +2,8 @@
 
 Angular Render Scan is a visual debugging overlay for Angular change detection. It helps you see which components update, how often they update, and how long those updates take.
 
+![Angular Render Scan demo](https://raw.githubusercontent.com/edisonaugusthy/angular-render-scan/main/docs/assets/angular-render-scan-demo.png)
+
 ## Install
 
 ```sh

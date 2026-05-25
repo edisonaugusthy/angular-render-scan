@@ -1,12 +1,18 @@
 name: Release
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
   release:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[skip release]')
     runs-on: ubuntu-latest
+    concurrency:
+      group: release
+      cancel-in-progress: false
     permissions:
       contents: write
       id-token: write
@@ -27,14 +33,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
-        run: npm run build
-
-      - name: Read package version
+      - name: Bump package version
         id: package
         run: |
-          VERSION=$(node -p "require('./packages/angular-render-scan/package.json').version")
+          npm version patch --no-git-tag-version
+          VERSION=$(node -p "require('./package.json').version")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        working-directory: packages/angular-render-scan
+
+      - name: Build
+        run: npm run build
 
       - name: Verify package availability
         run: |
@@ -43,6 +51,14 @@ jobs:
             echo "angular-render-scan@${{ steps.package.outputs.version }} already exists on npm."
             exit 1
           fi
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/angular-render-scan/package.json
+          git commit -m "chore(release): v${{ steps.package.outputs.version }} [skip release]"
+          git push origin HEAD:main
 
       - name: Publish to NPM
         run: |
