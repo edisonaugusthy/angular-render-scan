@@ -287,7 +287,7 @@ Release is manual only.
 
 Before the first automated publish, add a valid npm publish token as the GitHub
 Actions secret `NPM_TOKEN`. After the package exists on npm, you can instead
-configure npm trusted publishing for repository `edisonaugusthy/angular-scan`
+configure npm trusted publishing for repository `edisonaugusthy/angular-render-scan`
 and workflow filename `release.yml`.
 
 1. Go to GitHub Actions.

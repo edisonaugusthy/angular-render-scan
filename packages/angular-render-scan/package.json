@@ -4,7 +4,7 @@
   "description": "Visual Angular change-detection scanner for investor demos.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/edisonaugusthy/angular-scan.git",
+    "url": "git+https://github.com/edisonaugusthy/angular-render-scan.git",
     "directory": "packages/angular-render-scan"
   },
   "type": "module",
