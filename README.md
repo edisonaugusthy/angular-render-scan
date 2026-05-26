@@ -13,8 +13,11 @@ Angular Render Scan is a visual debugging overlay for Angular change detection. 
 - Compact component labels with component name, count, and latest duration.
 - Heatmap colors for fast, medium, and slow updates.
 - Optional console reports with `console.table()`.
-- Click-to-inspect support with `Cmd`/`Ctrl` + click on a highlighted component.
+- Details mode for hover-to-highlight inspection and pinned component recommendation panels.
 - Draggable toolbar.
+- Noise controls for minimum duration, render count, include/exclude filters, and label caps.
+- Configurable fast/slow performance thresholds.
+- Copy self-contained AI-ready prompts focused on slow/error components, issue context, and estimated cost.
 - Production guard by default.
 
 ## Install
@@ -37,7 +40,9 @@ import { AppComponent } from './app/app.component';
 bootstrapApplication(AppComponent, {
   providers: [
     provideAngularRenderScan({
-      enabled: true
+      enabled: true,
+      animationSpeed: 'fast',
+      slowThresholdMs: 15
     })
   ]
 });
@@ -58,11 +63,20 @@ The global build starts the overlay with default options. For Angular component-
 ## API
 
 ```ts
-import { getOptions, scan, setOptions, stop } from 'angular-render-scan';
+import {
+  copyAIPrompt,
+  getAIPrompt,
+  getOptions,
+  scan,
+  setOptions,
+  stop
+} from 'angular-render-scan';
 
 scan();
 setOptions({ enabled: false });
 setOptions({ enabled: true, log: true });
+console.log(getAIPrompt());
+await copyAIPrompt();
 console.log(getOptions());
 stop();
 ```
@@ -116,6 +130,16 @@ interface AngularRenderScanOptions {
   showFPS?: boolean;
   log?: boolean;
   dangerouslyForceRunInProduction?: boolean;
+  minDurationMs?: number;
+  minRenderCount?: number;
+  include?: Array<string | RegExp>;
+  exclude?: Array<string | RegExp>;
+  maxLabelCount?: number;
+  fastThresholdMs?: number;
+  slowThresholdMs?: number;
+  maxRecordedCycles?: number;
+  showCopyPrompt?: boolean;
+  promptContext?: string;
   theme?: Partial<AngularRenderScanTheme>;
   onCycleStart?: () => void;
   onRender?: (entry: AngularRenderEntry) => void;
@@ -131,16 +155,43 @@ provideAngularRenderScan({
   showToolbar: true,
   showFPS: true,
   animationSpeed: 'fast',
+  fastThresholdMs: 5,
+  slowThresholdMs: 15,
+  maxLabelCount: 20,
+  maxRecordedCycles: 30,
+  showCopyPrompt: true,
   log: false
 });
 ```
 
 - `enabled`: turns scanning on or off.
 - `showToolbar`: shows or hides the floating toolbar.
-- `animationSpeed`: controls highlight fade speed. Use `'off'` to disable visual flashes.
+- `animationSpeed`: controls highlight readability. `'fast'` keeps borders visible for about 1.2s, `'slow'` keeps them visible for about 2.4s, and `'off'` disables visual flashes.
 - `showFPS`: shows FPS in the toolbar.
 - `log`: prints cycle summaries to the console.
 - `dangerouslyForceRunInProduction`: allows the scanner to run outside Angular dev mode.
+- `minDurationMs`, `minRenderCount`, `include`, `exclude`: filter low-signal render entries.
+- `maxLabelCount`: limits how many highlighted components receive labels.
+- `fastThresholdMs`, `slowThresholdMs`: tune heatmap thresholds.
+- `maxRecordedCycles`: controls how many recent cycles are included in the copied AI prompt.
+- `showCopyPrompt`, `promptContext`: control the copyable AI performance prompt.
+
+### Basic Debug Config
+
+```ts
+provideAngularRenderScan({
+  enabled: true,
+  showToolbar: true,
+  animationSpeed: 'slow',
+  fastThresholdMs: 5,
+  slowThresholdMs: 15,
+  maxLabelCount: 12,
+  maxRecordedCycles: 20,
+  promptContext: 'Angular app using signals and OnPush components'
+});
+```
+
+Use `animationSpeed: 'slow'` when you want more time to read the borders and labels while interacting with the page.
 
 ## Callbacks
 
@@ -168,6 +219,9 @@ interface AngularRenderEntry {
   latestDuration: number;
   averageDuration: number;
   latestCycleId: number;
+  reason?: 'input' | 'event' | 'tick' | 'dom' | 'unknown';
+  changedInputs?: Array<{ name: string; previous: string; current: string }>;
+  selector?: string;
 }
 
 interface AngularRenderCycle {
@@ -216,9 +270,35 @@ The toolbar shows:
 - latest cycle time
 - changed component count
 - slowest component
+- copy slow issues prompt
 - clear stats button
 
-Drag the toolbar to move it. Hold `Cmd` on macOS or `Ctrl` on Windows/Linux and click a highlighted component to inspect the Angular component instance in the console when Angular exposes it.
+Drag the toolbar to move it. Use `Details` to inspect one component at a time and pin a recommendation panel.
+
+## Details Mode
+
+Use the `Details` checkbox in the toolbar to inspect individual components without keyboard modifiers.
+
+1. Interact with the page so Angular Render Scan captures a render cycle.
+2. Check `Details` in the toolbar.
+3. Hover over a captured component to show a dashed highlight.
+4. Click the component to pin the recommendation panel.
+5. Close the panel when finished.
+
+The recommendation panel shows severity, latest duration, average duration, render count, reason, selector, changed inputs, recent cycles, estimated cost, and component-local Angular recommendations based on the captured issue. For slow components, the panel also shows `Copy Slow Issue Prompt`, which copies a prompt for only that component.
+
+## AI Performance Prompt
+
+Use `Copy Slow Issues Prompt` in the toolbar, or call `getAIPrompt()` / `copyAIPrompt()`, to generate a self-contained prompt for an AI coding assistant. The prompt includes environment details, recent cycle history, the latest cycle, configured thresholds, and an issue list for components over `slowThresholdMs`.
+
+The copied prompt is intentionally focused: it does not copy every render entry. It lists slow components with selector, latest render time, average render time, render count, reason, changed inputs when available, and an estimated cost based on latest duration, cycle share, and observed render count. It does not include raw DOM nodes, component instances, or source code.
+
+```ts
+provideAngularRenderScan({
+  promptContext: 'Angular 18 app using signals and OnPush components',
+  maxRecordedCycles: 20
+});
+```
 
 ## Manual Marking
 

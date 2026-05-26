@@ -1,5 +1,15 @@
 import { APP_INITIALIZER, ApplicationRef, Directive, ElementRef, EnvironmentProviders, InjectionToken, Input, OnDestroy, Provider, inject, makeEnvironmentProviders, isDevMode, NgZone } from '@angular/core';
-import { beginCycle, currentCycleId, endCycle, ensureCycleForComponentCheck, scan, setOptions, setTaskScheduler } from '../../application/runtime';
+import {
+  beginCycle,
+  copyAIPrompt,
+  currentCycleId,
+  endCycle,
+  ensureCycleForComponentCheck,
+  getAIPrompt,
+  scan,
+  setOptions,
+  setTaskScheduler,
+} from '../../application/runtime';
 import { recordComponentCheck, registerComponent, unregisterComponent } from '../../application/stats';
 import type { AngularRenderScanOptions } from '../../domain/entities';
 import { setupAutoInstrumentation } from './auto-instrumentation';
@@ -65,7 +75,8 @@ export class AngularRenderScanMarkDirective implements OnDestroy {
     registerComponent({
       id: this.id,
       name: this.name,
-      element: this.element
+      element: this.element,
+      selector: this.element.tagName.toLowerCase()
     });
   }
 
@@ -153,6 +164,8 @@ function registerGlobalApplicationRef(appRef: ApplicationRef): void {
     AngularRenderScan?: {
       scan: typeof scan;
       setOptions: typeof setOptions;
+      getAIPrompt: typeof getAIPrompt;
+      copyAIPrompt: typeof copyAIPrompt;
       stop: () => void;
     };
   };
@@ -161,6 +174,8 @@ function registerGlobalApplicationRef(appRef: ApplicationRef): void {
     ...globalWindow.AngularRenderScan,
     scan,
     setOptions,
+    getAIPrompt,
+    copyAIPrompt,
     stop: () => {
       import('../../application/runtime').then(m => m.stop());
       restoreApplicationRef(appRef);

@@ -24,13 +24,15 @@ import { AppComponent } from './app/app.component';
 bootstrapApplication(AppComponent, {
   providers: [
     provideAngularRenderScan({
-      enabled: true
+      enabled: true,
+      animationSpeed: 'fast',
+      slowThresholdMs: 15
     })
   ]
 });
 ```
 
-Open your app in development mode and interact with the UI. Updated components flash on screen, and the floating toolbar shows FPS, cycle time, changed component count, and the slowest component.
+Open your app in development mode and interact with the UI. Updated components flash on screen, and the floating toolbar shows FPS, cycle time, changed component count, the slowest component, and a copyable AI performance prompt focused on slow/error components.
 
 ## Script Usage
 
@@ -45,11 +47,13 @@ Provider mode is recommended for Angular component-level instrumentation because
 ## API
 
 ```ts
-import { getOptions, scan, setOptions, stop } from 'angular-render-scan';
+import { copyAIPrompt, getAIPrompt, getOptions, scan, setOptions, stop } from 'angular-render-scan';
 
 scan();
 setOptions({ enabled: false });
 setOptions({ enabled: true, log: true });
+console.log(getAIPrompt());
+await copyAIPrompt();
 console.log(getOptions());
 stop();
 ```
@@ -62,16 +66,56 @@ provideAngularRenderScan({
   showToolbar: true,
   showFPS: true,
   animationSpeed: 'fast',
-  log: false
+  log: false,
+  fastThresholdMs: 5,
+  slowThresholdMs: 15,
+  maxLabelCount: 20,
+  maxRecordedCycles: 30,
+  showCopyPrompt: true
 });
 ```
 
 - `enabled`: turns scanning on or off.
 - `showToolbar`: shows or hides the floating toolbar.
-- `animationSpeed`: controls highlight fade speed. Use `'off'` to disable visual flashes.
+- `animationSpeed`: controls highlight readability. `'fast'` keeps borders visible for about 1.2s, `'slow'` keeps them visible for about 2.4s, and `'off'` disables visual flashes.
 - `showFPS`: shows FPS in the toolbar.
 - `log`: prints cycle summaries to the console.
+- `minDurationMs`, `minRenderCount`, `include`, `exclude`: hide low-signal entries.
+- `maxLabelCount`: caps visible component labels.
+- `fastThresholdMs`, `slowThresholdMs`: tune heatmap thresholds.
+- `maxRecordedCycles`: controls how many recent cycles are included in the copied AI prompt.
+- `showCopyPrompt`, `promptContext`: control the copyable AI performance prompt.
 - `dangerouslyForceRunInProduction`: allows the scanner to run outside Angular dev mode.
+
+## Basic Debug Config
+
+```ts
+provideAngularRenderScan({
+  enabled: true,
+  showToolbar: true,
+  animationSpeed: 'slow',
+  fastThresholdMs: 5,
+  slowThresholdMs: 15,
+  maxLabelCount: 12,
+  maxRecordedCycles: 20,
+  promptContext: 'Angular app using signals and OnPush components'
+});
+```
+
+Use `animationSpeed: 'slow'` when you want more time to read the borders and labels while interacting with the page.
+
+## AI Performance Prompt
+
+Click `Copy Slow Issues Prompt` in the toolbar, or call `copyAIPrompt()`, to copy a self-contained prompt for an AI coding assistant. It includes environment details, recent cycle history, Angular render-cycle evidence, thresholds, and an issue list for components over `slowThresholdMs`.
+
+The copied prompt is intentionally focused: it does not copy every render entry. It lists slow components with selector, latest render time, average render time, render count, reason, changed inputs when available, and an estimated cost based on latest duration, cycle share, and observed render count. It does not include raw DOM nodes, component instances, source code, or large object values.
+
+## Component Detail Panel
+
+Check `Details` in the toolbar to turn on component inspection. Hover over a captured component to show a dashed highlight, then click it to pin the recommendation panel. The panel stays open until you close it.
+
+The panel shows severity, latest duration, average duration, render count, reason, selector, changed inputs, recent cycles, estimated cost, and component-local Angular recommendations based on the captured issue. For slow components, it also shows `Copy Slow Issue Prompt`, which copies a prompt for only that component with the details needed by an AI coding assistant.
+
 
 ## Production Behavior
 

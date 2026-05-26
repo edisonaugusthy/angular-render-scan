@@ -1,13 +1,14 @@
 import { AngularRenderScanOverlay } from '../infrastructure/ui/overlay';
 import { getResolvedOptions, resolveOptions, setResolvedOptions } from '../domain/options';
 import { finishCycle, resetStats, startCycle } from './stats';
-import type { AngularRenderCycle, AngularRenderScanOptions } from '../domain/entities';
+import type { AngularRenderCycle, AngularRenderEntry, AngularRenderScanOptions } from '../domain/entities';
 
 let overlay: AngularRenderScanOverlay | undefined;
 let activeCycleId = 0;
 let activeCycleStartedAt = 0;
 let lastCycle: AngularRenderCycle | undefined;
 let implicitCycleScheduled = false;
+let recentCycles: AngularRenderCycle[] = [];
 
 let scheduleTask = (fn: () => void) => queueMicrotask(fn);
 
@@ -36,6 +37,7 @@ export function stop(): void {
   overlay?.destroy();
   overlay = undefined;
   resetStats();
+  clearRecording();
   lastCycle = undefined;
   activeCycleId = 0;
   activeCycleStartedAt = 0;
@@ -70,8 +72,9 @@ export function endCycle(cycleId = activeCycleId): AngularRenderCycle | undefine
 
   const options = getResolvedOptions();
   const finishedAt = performance.now();
-  const cycle = finishCycle(cycleId, activeCycleStartedAt, finishedAt);
+  const cycle = finishCycle(cycleId, activeCycleStartedAt, finishedAt, options);
   lastCycle = cycle;
+  recordRecentCycle(cycle, options.maxRecordedCycles);
   for (const entry of cycle.entries) {
     options.onRender?.(entry);
   }
@@ -84,7 +87,8 @@ export function endCycle(cycleId = activeCycleId): AngularRenderCycle | undefine
       Name: e.name,
       Count: e.count,
       'Time (ms)': Number(e.latestDuration.toFixed(2)),
-      'Avg (ms)': Number(e.averageDuration.toFixed(2))
+      'Avg (ms)': Number(e.averageDuration.toFixed(2)),
+      Reason: e.reason ?? 'unknown'
     }));
     console.table(tableData);
     console.groupEnd();
@@ -124,4 +128,145 @@ export function ensureCycleForComponentCheck(): number {
 
 export function getLastCycle(): AngularRenderCycle | undefined {
   return lastCycle;
+}
+
+export function getRecording(): AngularRenderCycle[] {
+  return recentCycles.slice();
+}
+
+export function clearRecording(): void {
+  recentCycles = [];
+}
+
+export function getAIPrompt(fps?: number): string {
+  const options = getResolvedOptions();
+  const cycles = recentCycles.length > 0 ? recentCycles : lastCycle ? [lastCycle] : [];
+  if (cycles.length === 0 || cycles.every((cycle) => cycle.entries.length === 0)) {
+    return '';
+  }
+
+  return buildAIPrompt(cycles, options, fps);
+}
+
+export async function copyAIPrompt(fps?: number): Promise<boolean> {
+  const prompt = getAIPrompt(fps);
+  if (!prompt || typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+    return false;
+  }
+
+  try {
+    await navigator.clipboard.writeText(prompt);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function recordRecentCycle(cycle: AngularRenderCycle, maxRecordedCycles: number): void {
+  recentCycles.push(cycle);
+  if (recentCycles.length > maxRecordedCycles) {
+    recentCycles = recentCycles.slice(-maxRecordedCycles);
+  }
+}
+
+function buildAIPrompt(cycles: AngularRenderCycle[], options = getResolvedOptions(), fps?: number): string {
+  const latest = cycles[cycles.length - 1];
+  const entries = topEntries(cycles, Math.min(options.maxLabelCount, 8));
+  const issueEntries = issueEntriesForPrompt(cycles, options);
+  const context = options.promptContext.trim();
+  const environment = getPromptEnvironment(fps);
+
+  return [
+    'I am debugging Angular change-detection performance issues using angular-render-scan. This prompt is self-contained and intentionally includes only the slow/actionable component evidence, not every render entry.',
+    context ? `Project context: ${context}` : '',
+    '',
+    'Environment:',
+    ...environment,
+    '',
+    'Latest render cycle:',
+    `- Cycle id: ${latest.id}`,
+    `- Duration: ${formatMs(latest.duration)}`,
+    `- Rendered components: ${latest.renderedCount}`,
+    latest.slowest ? `- Slowest component: ${latest.slowest.name} (${formatMs(latest.slowest.latestDuration)}, reason: ${latest.slowest.reason ?? 'unknown'})` : '',
+    `- Thresholds: fast <= ${formatMs(options.fastThresholdMs)}, slow >= ${formatMs(options.slowThresholdMs)}`,
+    `- Filters: min duration ${formatMs(options.minDurationMs)}, min render count ${options.minRenderCount}, max listed components ${options.maxLabelCount}`,
+    '',
+    'Recent cycle history:',
+    ...cycles.slice(-8).map(formatPromptCycle),
+    '',
+    'Slow/error component issues to fix:',
+    ...issueEntries.map((entry, index) => formatIssueEntry(entry, index + 1, latest.duration, options.slowThresholdMs)),
+    issueEntries.length === 0 ? '- No component exceeded the configured slow threshold in the captured cycles.' : '',
+    '',
+    'Reference only, capped top observed components:',
+    ...entries.map((entry, index) => formatReferenceEntry(entry, index + 1)),
+    '',
+    'Please identify the likely root causes for each slow/error component issue and suggest concrete Angular fixes. Keep recommendations tied to the listed component evidence. Focus on OnPush strategy, signal/computed usage, expensive template work, unnecessary input identity changes, event handlers, list tracking, and component boundaries. Prioritize the highest estimated cost first. Do not assume access to source code beyond the diagnostics above.'
+  ].filter(Boolean).join('\n');
+}
+
+function topEntries(cycles: AngularRenderCycle[], limit: number): AngularRenderEntry[] {
+  const latestById = new Map<string, AngularRenderEntry>();
+  for (const cycle of cycles) {
+    for (const entry of cycle.entries) {
+      latestById.set(entry.id, entry);
+    }
+  }
+
+  return [...latestById.values()]
+    .sort((a, b) => (b.latestDuration - a.latestDuration) || (b.count - a.count))
+    .slice(0, limit);
+}
+
+function issueEntriesForPrompt(cycles: AngularRenderCycle[], options = getResolvedOptions()): AngularRenderEntry[] {
+  const entries = topEntries(cycles, Math.min(options.maxLabelCount, 8));
+  return entries.filter((entry) => entry.latestDuration >= options.slowThresholdMs);
+}
+
+function formatIssueEntry(entry: AngularRenderEntry, index: number, latestCycleDuration: number, slowThresholdMs: number): string {
+  const changedInputs = entry.changedInputs?.length
+    ? `\n   Changed inputs: ${entry.changedInputs.map((input) => `${input.name} ${input.previous} -> ${input.current}`).join('; ')}`
+    : '\n   Changed inputs: none captured';
+  const overBy = Math.max(0, entry.latestDuration - slowThresholdMs);
+  const cycleShare = latestCycleDuration > 0 ? (entry.latestDuration / latestCycleDuration) * 100 : 0;
+  const estimatedTotalCost = entry.averageDuration * entry.count;
+
+  return [
+    `${index}. ${entry.name}`,
+    `   Selector: ${entry.selector ?? '-'}`,
+    `   Issue: latest render ${formatMs(entry.latestDuration)} exceeded slow threshold ${formatMs(slowThresholdMs)} by ${formatMs(overBy)}.`,
+    `   Cost: ${formatMs(entry.latestDuration)} in latest cycle, about ${cycleShare.toFixed(0)}% of latest cycle time, estimated observed total ${formatMs(estimatedTotalCost)} across ${entry.count} renders.`,
+    `   Average render: ${formatMs(entry.averageDuration)}`,
+    `   Render reason: ${entry.reason ?? 'unknown'}`,
+    changedInputs
+  ].join('\n');
+}
+
+function formatReferenceEntry(entry: AngularRenderEntry, index: number): string {
+  return `${index}. ${entry.name}: selector ${entry.selector ?? '-'}, latest ${formatMs(entry.latestDuration)}, avg ${formatMs(entry.averageDuration)}, renders ${entry.count}, reason ${entry.reason ?? 'unknown'}`;
+}
+
+function formatPromptCycle(cycle: AngularRenderCycle): string {
+  const slowest = cycle.slowest ? `${cycle.slowest.name} ${formatMs(cycle.slowest.latestDuration)}` : 'none';
+  return `- #${cycle.id}: ${formatMs(cycle.duration)}, ${cycle.renderedCount} components, slowest ${slowest}`;
+}
+
+function getPromptEnvironment(fps?: number): string[] {
+  const viewport = typeof window !== 'undefined'
+    ? `${window.innerWidth}x${window.innerHeight} @${window.devicePixelRatio || 1}x`
+    : '';
+  const url = typeof window !== 'undefined' ? window.location.href : '';
+  const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+
+  return [
+    `- Captured at: ${new Date().toISOString()}`,
+    typeof fps === 'number' && Number.isFinite(fps) ? `- FPS: ${fps}` : '',
+    viewport ? `- Viewport: ${viewport}` : '',
+    url ? `- URL: ${url}` : '',
+    userAgent ? `- User agent: ${userAgent}` : ''
+  ].filter(Boolean);
+}
+
+function formatMs(value: number): string {
+  return `${value.toFixed(1)}ms`;
 }

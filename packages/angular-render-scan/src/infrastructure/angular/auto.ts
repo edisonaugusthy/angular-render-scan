@@ -1,4 +1,11 @@
-export { getOptions, scan, setOptions, stop } from '../../application/runtime';
+export {
+  copyAIPrompt,
+  getAIPrompt,
+  getOptions,
+  scan,
+  setOptions,
+  stop,
+} from '../../application/runtime';
 
 import { scan } from '../../application/runtime';
 

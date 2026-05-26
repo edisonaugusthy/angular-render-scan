@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { finishCycle, recordComponentCheck, registerComponent, resetStats, startCycle } from './stats';
+import { getResolvedOptions, resetOptionsForTest, setResolvedOptions } from '../domain/options';
 
 describe('stats', () => {
-  afterEach(() => resetStats());
+  afterEach(() => {
+    resetStats();
+    resetOptionsForTest();
+  });
 
   it('aggregates component timings and slowest entries', () => {
     const first = document.createElement('div');
@@ -19,5 +23,46 @@ describe('stats', () => {
     expect(cycle.renderedCount).toBe(2);
     expect(cycle.duration).toBe(10);
     expect(cycle.slowest?.name).toBe('SecondComponent');
+  });
+
+  it('stores render reasons and changed input summaries', () => {
+    const element = document.createElement('app-cart');
+    document.body.append(element);
+    registerComponent({ id: 'cart', name: 'CartComponent', element, selector: 'app-cart' });
+    const cycleId = startCycle();
+
+    const entry = recordComponentCheck('cart', 6, cycleId, {
+      reason: 'input',
+      changedInputs: [{ name: 'items', previous: 'Array(1)', current: 'Array(2)' }]
+    });
+
+    expect(entry).toMatchObject({
+      reason: 'input',
+      selector: 'app-cart',
+      changedInputs: [{ name: 'items', previous: 'Array(1)', current: 'Array(2)' }]
+    });
+  });
+
+  it('filters entries by duration, count, include, and exclude options', () => {
+    const cart = document.createElement('app-cart');
+    const product = document.createElement('app-product-card');
+    document.body.append(cart, product);
+    registerComponent({ id: 'cart', name: 'CartComponent', element: cart, selector: 'app-cart' });
+    registerComponent({ id: 'product', name: 'ProductCard', element: product, selector: 'app-product-card' });
+    const cycleId = startCycle();
+
+    recordComponentCheck('cart', 8, cycleId);
+    recordComponentCheck('cart', 9, cycleId);
+    recordComponentCheck('product', 20, cycleId);
+    setResolvedOptions({
+      minDurationMs: 5,
+      minRenderCount: 2,
+      include: ['Cart'],
+      exclude: ['Product']
+    });
+
+    const cycle = finishCycle(cycleId, 10, 20, getResolvedOptions());
+
+    expect(cycle.entries.map((entry) => entry.name)).toEqual(['CartComponent']);
   });
 });
