@@ -30,10 +30,10 @@ const PRODUCTS: Product[] = [
       <div class="product-info">
         <h3>{{ product.title }}</h3>
         <p>{{ product.description }}</p>
-        <div class="product-footer">
-          <span class="price">\${{ product.price.toFixed(2) }}</span>
-          <button (click)="onAdd.emit(product)">Add to Cart</button>
-        </div>
+      </div>
+      <div class="product-footer">
+        <span class="price">\${{ product.price.toFixed(2) }}</span>
+        <button (click)="onAdd.emit(product)">Add to Cart</button>
       </div>
     </article>
   `,
@@ -70,8 +70,11 @@ class CartItemComponent {
   imports: [AngularRenderScanMarkDirective, CommonModule, CartItemComponent],
   template: `
     <aside angularRenderScanMark="ShoppingCart" class="cart-sidebar">
-      <h2>Your Cart</h2>
-      <p class="cart-summary">{{ totalItems() }} items | Total: \${{ totalPrice().toFixed(2) }}</p>
+      <div class="panel-heading">
+        <span class="panel-kicker">Signal cart</span>
+        <h2>Your Cart</h2>
+      </div>
+      <p class="cart-summary">{{ totalItems() }} items · \${{ totalPrice().toFixed(2) }}</p>
       
       <div class="cart-items">
         @if (cartKeys().length === 0) {
@@ -132,9 +135,15 @@ class ShoppingCartComponent {
   imports: [AngularRenderScanMarkDirective],
   template: `
     <section angularRenderScanMark="Recommendations" class="panel slow-panel">
-      <h2>AI Recommendations (Slow)</h2>
-      <p>Simulating expensive logic for the red heatmap visual.</p>
-      <div class="recommendation-badge">Confidence Score: {{ expensiveScore() }}</div>
+      <div class="panel-heading">
+        <span class="panel-kicker">Slow path</span>
+        <h2>Recommendation Engine</h2>
+      </div>
+      <p>Runs intentionally expensive computed work so the scanner can surface a slow component.</p>
+      <div class="recommendation-badge">
+        <span>Confidence</span>
+        <strong>{{ expensiveScore() }}</strong>
+      </div>
       <button type="button" (click)="recalculate()">Recalculate</button>
     </section>
   `
@@ -161,9 +170,14 @@ class RecommendationsComponent {
   imports: [AngularRenderScanMarkDirective],
   template: `
     <section angularRenderScanMark="HeroBanner" class="hero-banner">
-      <h1>Developer Store</h1>
-      <p>Buy the best tools for your next coding session.</p>
-      <button class="secondary" (click)="toggleTheme()">Toggle Dark Mode ({{isDark() ? 'On' : 'Off'}})</button>
+      <div>
+        <h1>Developer Store</h1>
+        <p>Interact with this compact Angular storefront to watch render cost, slow paths, and component updates in real time.</p>
+      </div>
+      <div class="hero-actions">
+        <span class="status-pill">Render Scan live</span>
+        <button class="secondary" (click)="toggleTheme()">Theme {{isDark() ? 'On' : 'Off'}}</button>
+      </div>
     </section>
   `
 })
@@ -195,14 +209,18 @@ class HeroBannerComponent {
 
       <div class="store-layout">
         <section class="products-section">
-          <h2>Products</h2>
+          <div class="panel-heading">
+            <span class="panel-kicker">OnPush products</span>
+            <h2>Products</h2>
+          </div>
           <div class="products-grid">
             @for (product of products; track product.id) {
               <app-product-card [product]="product" (onAdd)="addToCart($event)" />
             }
           </div>
-          
-          <div class="spacer"></div>
+        </section>
+
+        <section class="diagnostics-column">
           <app-recommendations />
         </section>
 
