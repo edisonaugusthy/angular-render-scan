@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "declaration": true,
+    "declarationMap": true,
+    "inlineSources": true,
+    "types": [],
+    "lib": ["ES2022", "DOM"]
+  },
+  "angularCompilerOptions": {
+    "compilationMode": "partial"
+  },
+  "exclude": [
+    "**/*.spec.ts"
+  ]
+}

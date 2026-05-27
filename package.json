@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "npm run build:scan && npm run build:demo",
-    "build:scan": "tsup --config packages/angular-render-scan/tsup.config.ts && cp packages/angular-render-scan/dist/auto.global.global.js packages/angular-render-scan/dist/auto.global.js",
+    "build:scan": "ng-packagr -p packages/angular-render-scan/ng-package.json -c packages/angular-render-scan/tsconfig.lib.json && tsup --config packages/angular-render-scan/tsup.config.ts && cp packages/angular-render-scan/dist/auto.global.global.js packages/angular-render-scan/dist/auto.global.js",
     "build:demo": "ng build angular-render-scan-demo",
     "dev": "ng serve angular-render-scan-demo --host 127.0.0.1 --port 4200",
     "test": "vitest run",
@@ -28,6 +28,7 @@
     "@angular/compiler-cli": "21.2.14",
     "@playwright/test": "^1.57.0",
     "jsdom": "^27.3.0",
+    "ng-packagr": "^21.2.3",
     "tsup": "^8.5.1",
     "typescript": "~5.9.3",
     "vitest": "^4.0.15"
