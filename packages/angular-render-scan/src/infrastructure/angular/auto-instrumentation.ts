@@ -123,6 +123,7 @@ export function setupAutoInstrumentation(): void {
       } else if (event === ProfilerEventTemplateUpdateEnd) {
         let compData = instanceMap.get(instance);
         if (compData && compData.element && componentCheckStack.length > 0) {
+          const depth = componentCheckStack.length;
           const frame = componentCheckStack.pop()!;
           if (frame.id === compData.id) {
             const cycleId = currentCycleId();
@@ -138,15 +139,29 @@ export function setupAutoInstrumentation(): void {
               // Check if actual DOM mutation occurred to prevent full-screen flashing
               const nextSignature = getRenderedSignature(compData.element);
               const signatureChanged = compData.signature !== nextSignature;
-              if (signatureChanged || frame.details.reason === 'input') {
+              const isWasted = !signatureChanged && frame.details.reason !== 'input';
+
+              if (signatureChanged) {
                 compData.signature = nextSignature;
-                const entry = recordComponentCheck(frame.id, selfDuration, cycleId, {
+              }
+
+              const entry = recordComponentCheck(
+                frame.id,
+                selfDuration,
+                cycleId,
+                {
                   reason: frame.details.reason === 'input' ? 'input' : signatureChanged ? 'dom' : 'unknown',
-                  changedInputs: frame.details.changedInputs
-                });
-                if (entry) {
-                  window.dispatchEvent(new CustomEvent('angular-render-scan:render', { detail: entry }));
+                  changedInputs: frame.details.changedInputs,
+                  mutationType: isWasted ? 'none' : undefined
+                },
+                {
+                  startTime: frame.startTime,
+                  totalDuration,
+                  depth
                 }
+              );
+              if (entry) {
+                window.dispatchEvent(new CustomEvent('angular-render-scan:render', { detail: entry }));
               }
             }
           } else {

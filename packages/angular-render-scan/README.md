@@ -2,7 +2,7 @@
 
 Angular Render Scan is a visual debugging overlay for Angular change detection. It helps you see which components update, how often they update, and how long those updates take.
 
-![Angular Render Scan demo](https://raw.githubusercontent.com/edisonaugusthy/angular-render-scan/main/docs/assets/angular-render-scan-demo.png)
+![Angular Render Scan demo](https://raw.githubusercontent.com/edisonaugusthy/angular-render-scan/main/docs/assets/angular-render-scan-demo.gif)
 
 ## Install
 
@@ -17,18 +17,17 @@ Angular Render Scan expects Angular 9+ as a peer dependency.
 Add `provideAngularRenderScan()` to your Angular bootstrap providers.
 
 ```ts
-import { bootstrapApplication } from '@angular/platform-browser';
-import { provideAngularRenderScan } from 'angular-render-scan';
-import { AppComponent } from './app/app.component';
+import { bootstrapApplication } from "@angular/platform-browser";
+import { provideAngularRenderScan } from "angular-render-scan";
+import { AppComponent } from "./app/app.component";
 
 bootstrapApplication(AppComponent, {
   providers: [
     provideAngularRenderScan({
       enabled: true,
-      animationSpeed: 'fast',
-      slowThresholdMs: 15
-    })
-  ]
+      animationSpeed: "fast",
+    }),
+  ],
 });
 ```
 
@@ -47,7 +46,14 @@ Provider mode is recommended for Angular component-level instrumentation because
 ## API
 
 ```ts
-import { copyAIPrompt, getAIPrompt, getOptions, scan, setOptions, stop } from 'angular-render-scan';
+import {
+  copyAIPrompt,
+  getAIPrompt,
+  getOptions,
+  scan,
+  setOptions,
+  stop,
+} from "angular-render-scan";
 
 scan();
 setOptions({ enabled: false });
@@ -65,13 +71,11 @@ provideAngularRenderScan({
   enabled: true,
   showToolbar: true,
   showFPS: true,
-  animationSpeed: 'fast',
+  animationSpeed: "fast",
   log: false,
-  fastThresholdMs: 5,
-  slowThresholdMs: 15,
   maxLabelCount: 20,
   maxRecordedCycles: 30,
-  showCopyPrompt: true
+  showCopyPrompt: true,
 });
 ```
 
@@ -82,7 +86,6 @@ provideAngularRenderScan({
 - `log`: prints cycle summaries to the console.
 - `minDurationMs`, `minRenderCount`, `include`, `exclude`: hide low-signal entries.
 - `maxLabelCount`: caps visible component labels.
-- `fastThresholdMs`, `slowThresholdMs`: tune heatmap thresholds.
 - `maxRecordedCycles`: controls how many recent cycles are included in the copied AI prompt.
 - `showCopyPrompt`, `promptContext`: control the copyable AI performance prompt.
 - `dangerouslyForceRunInProduction`: allows the scanner to run outside Angular dev mode.
@@ -93,12 +96,10 @@ provideAngularRenderScan({
 provideAngularRenderScan({
   enabled: true,
   showToolbar: true,
-  animationSpeed: 'slow',
-  fastThresholdMs: 5,
-  slowThresholdMs: 15,
+  animationSpeed: "slow",
   maxLabelCount: 12,
   maxRecordedCycles: 20,
-  promptContext: 'Angular app using signals and OnPush components'
+  promptContext: "Angular app using signals and OnPush components",
 });
 ```
 
@@ -106,7 +107,7 @@ Use `animationSpeed: 'slow'` when you want more time to read the borders and lab
 
 ## AI Performance Prompt
 
-Click `Copy Slow Issues Prompt` in the toolbar, or call `copyAIPrompt()`, to copy a self-contained prompt for an AI coding assistant. It includes environment details, recent cycle history, Angular render-cycle evidence, thresholds, and an issue list for components over `slowThresholdMs`.
+Click `Copy Slow Issues Prompt` in the toolbar, or call `copyAIPrompt()`, to copy a self-contained prompt for an AI coding assistant. It includes environment details, recent cycle history, Angular render-cycle evidence, thresholds, and an issue list for components exceeding the performance warning threshold (10ms by default).
 
 The copied prompt is intentionally focused: it does not copy every render entry. It lists slow components with selector, latest render time, average render time, render count, reason, changed inputs when available, and an estimated cost based on latest duration, cycle share, and observed render count. It does not include raw DOM nodes, component instances, source code, or large object values.
 
@@ -116,14 +117,13 @@ Check `Details` in the toolbar to turn on component inspection. Hover over a cap
 
 The panel shows severity, latest duration, average duration, render count, reason, selector, changed inputs, recent cycles, estimated cost, and component-local Angular recommendations based on the captured issue. For slow components, it also shows `Copy Slow Issue Prompt`, which copies a prompt for only that component with the details needed by an AI coding assistant.
 
-
 ## Production Behavior
 
 Angular Render Scan is intended for development and demo debugging. Provider mode checks Angular `isDevMode()` and does not run in production unless explicitly enabled.
 
 ```ts
 provideAngularRenderScan({
-  dangerouslyForceRunInProduction: true
+  dangerouslyForceRunInProduction: true,
 });
 ```
 

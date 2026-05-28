@@ -29,8 +29,6 @@ describe('options', () => {
       include: ['Cart'],
       exclude: [/Legacy/],
       maxLabelCount: 5,
-      fastThresholdMs: 4,
-      slowThresholdMs: 12,
       maxRecordedCycles: 10,
       showCopyPrompt: false,
       promptContext: 'signals app'
@@ -41,8 +39,6 @@ describe('options', () => {
       minRenderCount: 3,
       include: ['Cart'],
       maxLabelCount: 5,
-      fastThresholdMs: 4,
-      slowThresholdMs: 12,
       maxRecordedCycles: 10,
       showCopyPrompt: false,
       promptContext: 'signals app'
@@ -54,8 +50,6 @@ describe('options', () => {
       minDurationMs: -1,
       minRenderCount: Number.NaN,
       maxLabelCount: 0,
-      fastThresholdMs: 20,
-      slowThresholdMs: 10,
       maxRecordedCycles: -1
     });
 
@@ -63,9 +57,23 @@ describe('options', () => {
       minDurationMs: 0,
       minRenderCount: 0,
       maxLabelCount: 20,
-      fastThresholdMs: 20,
-      slowThresholdMs: 15,
       maxRecordedCycles: 30
     });
+  });
+
+  it('validates budget, editorProtocol and darkMode options', () => {
+    setResolvedOptions({
+      editorProtocol: 'cursor',
+      darkMode: 'dark'
+    });
+
+    const resolved = getResolvedOptions();
+    expect(resolved.budgets).toMatchObject({
+      warnMs: 10,
+      errorMs: 30,
+      maxRendersPerSecond: 20
+    });
+    expect(resolved.editorProtocol).toBe('cursor');
+    expect(resolved.darkMode).toBe('dark');
   });
 });
