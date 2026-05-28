@@ -1,4 +1,4 @@
-import { APP_INITIALIZER, ApplicationRef, Directive, ElementRef, EnvironmentProviders, InjectionToken, Input, OnDestroy, Provider, inject, makeEnvironmentProviders, isDevMode, NgZone } from '@angular/core';
+import { APP_INITIALIZER, ApplicationRef, Directive, ElementRef, EnvironmentProviders, InjectionToken, input, effect, OnDestroy, Provider, inject, makeEnvironmentProviders, isDevMode, NgZone } from '@angular/core';
 import {
   beginCycle,
   copyAIPrompt,
@@ -30,15 +30,16 @@ export class AngularRenderScanMarkDirective implements OnDestroy {
   private childrenDuration = 0;
   private name = this.inferName();
 
-  @Input('angularRenderScanMark')
-  set angularRenderScanMark(name: string | undefined) {
-    if (name) {
-      this.name = name;
-      this.register();
-    }
-  }
+  readonly angularRenderScanMark = input<string | undefined>(undefined, { alias: 'angularRenderScanMark' });
 
   constructor() {
+    effect(() => {
+      const name = this.angularRenderScanMark();
+      if (name) {
+        this.name = name;
+        this.register();
+      }
+    });
     this.register();
   }
 
