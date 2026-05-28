@@ -121,6 +121,7 @@ const TOOLBAR_CSS = `
   .metric { display: grid; gap: 3px; min-width: 50px; }
   .label { color: #64748b; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
   .value { color: #0f172a; font-family: monospace; font-size: 11px; font-weight: 700; white-space: nowrap; }
+  .value.fps-drop { color: #ef4444; }
   .toolbar-actions {
     display: flex;
     align-items: center;
@@ -225,6 +226,7 @@ const TOOLBAR_CSS = `
     gap: 12px;
     padding: 18px;
     border: 1px solid rgba(15, 23, 42, 0.08);
+    border-top: 4px solid #3b82f6;
     border-radius: 14px;
     background: rgba(255, 255, 255, 0.96);
     box-shadow: 
@@ -235,7 +237,11 @@ const TOOLBAR_CSS = `
     font: 500 11px/1.4 Inter, system-ui, -apple-system, sans-serif;
     pointer-events: auto;
     backdrop-filter: blur(16px);
+    transition: border-top-color 0.2s ease;
   }
+  .inspect-panel.slow { border-top-color: #ef4444; }
+  .inspect-panel.medium { border-top-color: #f59e0b; }
+  .inspect-panel.fast { border-top-color: #10b981; }
   .panel-head {
     display: flex;
     justify-content: space-between;
@@ -284,42 +290,100 @@ const TOOLBAR_CSS = `
   }
   .panel-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin: 4px 0;
   }
-  .panel-field {
+  .panel-grid .panel-field {
+    background: #f8fafc;
+    border: 1px solid rgba(15, 23, 42, 0.05);
+    border-radius: 8px;
+    padding: 8px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 48px;
+  }
+  .panel-grid .panel-label {
+    font-size: 8px;
+    font-weight: 700;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .panel-grid .panel-value {
+    font-size: 11px;
+    font-weight: 700;
+    color: #0f172a;
+    margin-top: 2px;
+  }
+  .inspect-panel .panel-field:not(.panel-grid .panel-field) {
+    border-top: 1px solid rgba(15, 23, 42, 0.04);
+    padding-top: 10px;
     display: grid;
-    gap: 2px;
+    gap: 4px;
   }
-  .panel-label {
+  .inspect-panel .panel-label {
     color: #64748b;
     font-size: 9px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
-  .panel-value {
+  .inspect-panel .panel-value {
     color: #0f172a;
-    font-family: monospace;
     font-size: 11px;
-    font-weight: 600;
+    line-height: 1.4;
     overflow-wrap: anywhere;
   }
   .panel-list {
     display: grid;
-    gap: 6px;
-    color: #475569;
+    gap: 8px;
+    margin-top: 4px;
   }
-  .panel-list div {
-    position: relative;
-    padding-left: 10px;
-    overflow-wrap: anywhere;
+  .rec-card {
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(15, 23, 42, 0.05);
+    border-left: 3px solid #3b82f6;
+    background: #f8fafc;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    transition: all 0.15s ease;
   }
-  .panel-list div::before {
-    content: "•";
-    position: absolute;
-    left: 0;
-    color: #3b82f6;
+  .rec-card:hover {
+    border-color: rgba(15, 23, 42, 0.1);
+    transform: translateY(-0.5px);
+  }
+  .rec-card.slow {
+    border-left-color: #ef4444;
+    background: rgba(239, 68, 68, 0.015);
+  }
+  .rec-card.medium {
+    border-left-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.015);
+  }
+  .rec-card.fast {
+    border-left-color: #10b981;
+    background: rgba(16, 185, 129, 0.015);
+  }
+  .rec-category {
+    font-size: 8px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .rec-card.slow .rec-category { color: #e11d48; }
+  .rec-card.medium .rec-category { color: #d97706; }
+  .rec-card.fast .rec-category { color: #059669; }
+  .rec-action {
+    font-size: 11px;
+    line-height: 1.45;
+    color: #334155;
+    font-weight: 500;
+    margin: 0;
   }
 `;
 
@@ -692,7 +756,7 @@ export class AngularRenderScanOverlay {
           <span class="track" aria-hidden="true"></span>
           <span class="switch-text">${this.options.enabled ? 'On' : 'Off'}</span>
         </label>
-        ${this.metric('FPS', this.options.showFPS ? String(displayedFps) : '-')}
+        ${this.metric('FPS', this.options.showFPS ? String(displayedFps) : '-', this.getFpsClass(displayedFps))}
         ${this.metric('Cycle', cycle ? `${cycle.duration.toFixed(1)}ms` : '-')}
         ${this.metric('Count', cycle ? String(cycle.renderedCount) : '0')}
         ${this.metric('Slowest', cycle?.slowest ? cycle.slowest.name : '-')}
@@ -702,7 +766,7 @@ export class AngularRenderScanOverlay {
             <input class="details-checkbox" type="checkbox" ${this.detailsMode ? 'checked' : ''} aria-label="Enable component details panel" />
             <span>Details</span>
           </label>
-          ${this.options.showCopyPrompt ? '<button class="action-btn copy-prompt-btn" aria-label="Copy prompt for slow render issues" data-tooltip="Copy an AI-ready prompt with only the captured slow/error component issues and their runtime evidence.">Copy Slow Issues Prompt</button>' : ''}
+          ${this.options.showCopyPrompt ? '<button class="action-btn copy-prompt-btn" aria-label="Copy prompt for slow render issues" data-tooltip="Copy an AI-ready prompt with only the captured slow/error component issues and their runtime evidence.">Copy AI Fix Prompt</button>' : ''}
           <button class="clear-btn" aria-label="Clear stats">Clear</button>
         </span>
         <span class="status" aria-live="polite">${escapeHtml(this.copyStatus)}</span>
@@ -761,8 +825,15 @@ export class AngularRenderScanOverlay {
     }, { once: true });
   }
 
-  private metric(label: string, value: string): string {
-    return `<span class="metric"><span class="label">${label}</span><span class="value">${value}</span></span>`;
+  private metric(label: string, value: string, extraClass = ''): string {
+    return `<span class="metric"><span class="label">${label}</span><span class="value ${extraClass}">${value}</span></span>`;
+  }
+
+  private getFpsClass(fps: number): string {
+    if (!this.options.showFPS || fps === 0) {
+      return '';
+    }
+    return fps < 50 ? 'fps-drop' : '';
   }
 
   private replaceToolbarHtml(toolbar: HTMLElement, html: string): boolean {
@@ -794,14 +865,14 @@ export class AngularRenderScanOverlay {
       : '-';
 
     return `
-      <section class="inspect-panel" style="right: ${this.toolbarX}px; bottom: ${this.toolbarY + 60}px;" aria-label="Component recommendation panel">
+      <section class="inspect-panel ${severity.kind}" style="right: ${this.toolbarX}px; bottom: ${this.toolbarY + 60}px;" aria-label="Component recommendation panel">
         <div class="panel-head">
           <div>
             <div class="panel-title">${escapeHtml(entry.name)}</div>
             <span class="severity ${severity.kind}">${escapeHtml(severity.label)}</span>
           </div>
           <div class="panel-actions">
-            ${isSlow ? '<button class="panel-copy-btn" aria-label="Copy prompt for this slow component issue" data-tooltip="Copy an AI-ready prompt scoped only to this slow component and its local evidence.">Copy Slow Issue Prompt</button>' : ''}
+            ${isSlow ? '<button class="panel-copy-btn" aria-label="Copy prompt for this slow component issue" data-tooltip="Copy an AI-ready prompt scoped only to this slow component and its local evidence.">Copy AI Fix Prompt</button>' : ''}
             <button class="panel-close" aria-label="Close component details">Close</button>
           </div>
         </div>
@@ -827,7 +898,14 @@ export class AngularRenderScanOverlay {
         </div>
         <div class="panel-field">
           <span class="panel-label">Recommendations</span>
-          <span class="panel-list">${recommendations.map((item) => `<div>${escapeHtml(item)}</div>`).join('')}</span>
+          <span class="panel-list">
+            ${recommendations.map((rec) => `
+              <div class="rec-card ${rec.severity}">
+                <span class="rec-category">${escapeHtml(rec.category)}</span>
+                <p class="rec-action">${escapeHtml(rec.action)}</p>
+              </div>
+            `).join('')}
+          </span>
         </div>
       </section>
     `;
@@ -868,23 +946,45 @@ export class AngularRenderScanOverlay {
     return `${entry.latestDuration.toFixed(1)}ms latest, ${cycleShare}% of latest cycle, about ${totalCost.toFixed(1)}ms observed across ${entry.count} renders`;
   }
 
-  private recommendationsFor(entry: AngularRenderEntry): string[] {
-    const recommendations: string[] = [];
+  private recommendationsFor(entry: AngularRenderEntry): Array<{ category: string; action: string; severity: 'slow' | 'medium' | 'fast' }> {
+    const recommendations: Array<{ category: string; action: string; severity: 'slow' | 'medium' | 'fast' }> = [];
     if (entry.latestDuration >= this.options.slowThresholdMs) {
-      recommendations.push(`${entry.name} crossed the slow threshold by ${(entry.latestDuration - this.options.slowThresholdMs).toFixed(1)}ms; inspect template expressions, computed values, pipes, and synchronous work inside this component first.`);
+      recommendations.push({
+        category: 'Threshold Spike',
+        action: `Exceeded the slow threshold by ${(entry.latestDuration - this.options.slowThresholdMs).toFixed(1)}ms. Audit template calculations, expensive computed values, or blocking synchronous logic in this component.`,
+        severity: 'slow'
+      });
     }
     if (entry.reason === 'input' || entry.changedInputs?.length) {
-      const inputNames = entry.changedInputs?.map((input) => input.name).join(', ') || 'its inputs';
-      recommendations.push(`${entry.name} rendered after input changes (${inputNames}); check whether the parent recreates these values or passes unstable object/array/function identities.`);
+      const inputNames = entry.changedInputs?.map((input) => input.name).join(', ') || 'unspecified inputs';
+      recommendations.push({
+        category: 'Unstable Inputs',
+        action: `Re-rendered due to input changes: [${inputNames}]. Check if parent passes new object/array/function references during change detection; use stable signals or memoization.`,
+        severity: 'medium'
+      });
     }
     if (entry.count > 5) {
-      recommendations.push(`${entry.name} rendered ${entry.count} times in the observed session; look for local subscriptions, timers, repeated events, or parent updates that specifically target this component.`);
+      recommendations.push({
+        category: 'Render Fatigue',
+        action: `Checked ${entry.count} times. Audit local subscriptions, interval timers, or event bindings triggering frequent CD ticks.`,
+        severity: 'medium'
+      });
     }
-    if (entry.selector?.includes('item') || entry.selector?.includes('card') || entry.name.toLowerCase().includes('item') || entry.name.toLowerCase().includes('card')) {
-      recommendations.push(`${entry.name} looks like a repeated UI component; verify track expressions and avoid rebuilding item inputs for unchanged rows.`);
+    const isRepeated = entry.selector?.includes('item') || entry.selector?.includes('card') || 
+                      entry.name.toLowerCase().includes('item') || entry.name.toLowerCase().includes('card');
+    if (isRepeated) {
+      recommendations.push({
+        category: 'Repeated Node',
+        action: `Looks like an iterated list node. Verify track expressions in @for blocks and avoid editing unchanged items.`,
+        severity: 'fast'
+      });
     }
     if (recommendations.length === 0) {
-      recommendations.push(`${entry.name} is currently below the slow threshold; use this panel mainly to confirm render reason, input changes, and whether the component keeps rendering unnecessarily.`);
+      recommendations.push({
+        category: 'Optimal Performance',
+        action: `Component is currently healthy. Verify that it is not checked on unrelated parent events by enforcing ChangeDetectionStrategy.OnPush.`,
+        severity: 'fast'
+      });
     }
     return recommendations;
   }
@@ -908,36 +1008,59 @@ export class AngularRenderScanOverlay {
       .slice(-8)
       .map((cycle) => {
         const match = cycle.entries.find((candidate) => candidate.id === entry.id);
-        return `- #${cycle.id}: component ${match?.latestDuration.toFixed(1)}ms, cycle ${cycle.duration.toFixed(1)}ms, rendered ${cycle.renderedCount}`;
+        return `- **Cycle #${cycle.id}**: Component rendered in \`${match?.latestDuration.toFixed(1)}ms\`, total cycle time \`${cycle.duration.toFixed(1)}ms\`, total rendered components: \`${cycle.renderedCount}\``;
       });
     const changedInputs = entry.changedInputs?.length
-      ? entry.changedInputs.map((input) => `- ${input.name}: ${input.previous} -> ${input.current}`).join('\n')
+      ? entry.changedInputs.map((input) => `- \`${input.name}\`: \`${input.previous}\` -> \`${input.current}\``).join('\n')
       : '- none captured';
 
     return [
+      '# ⚡️ Component Performance Optimization Request (via angular-render-scan)',
       'I need help fixing one slow/error Angular component found by angular-render-scan. This prompt is scoped to only this component and its local evidence.',
       '',
-      `Component: ${entry.name}`,
-      `Selector: ${entry.selector ?? '-'}`,
-      `Severity: ${this.severityFor(entry).label}`,
-      `Latest render: ${entry.latestDuration.toFixed(1)}ms`,
-      `Average render: ${entry.averageDuration.toFixed(1)}ms`,
-      `Render count: ${entry.count}`,
-      `Reason: ${entry.reason ?? 'unknown'}`,
-      `Thresholds: fast <= ${this.options.fastThresholdMs.toFixed(1)}ms, slow >= ${this.options.slowThresholdMs.toFixed(1)}ms`,
-      `Estimated cost: ${this.costFor(entry)}`,
-      typeof fps === 'number' && Number.isFinite(fps) ? `FPS: ${fps}` : '',
+      '---',
       '',
+      '## 📊 Telemetry Diagnostics',
+      'Below is the diagnostic telemetry data captured for this component:',
+      `* **Component Class:** \`${entry.name}\``,
+      `* **Selector:** \`${entry.selector ?? '-'}\``,
+      `* **Performance Severity:** **${this.severityFor(entry).label}**`,
+      `* **Trigger / Reason for Render:** \`${entry.reason ?? 'unknown'}\``,
+      `* **Latest render duration:** \`${entry.latestDuration.toFixed(1)}ms\``,
+      `* **Average render duration:** \`${entry.averageDuration.toFixed(1)}ms\``,
+      `* **Total captured renders:** ${entry.count}`,
+      `* **Configured Thresholds:** Fast <= \`${this.options.fastThresholdMs.toFixed(1)}ms\` | Slow >= \`${this.options.slowThresholdMs.toFixed(1)}ms\``,
+      `* **Estimated cost:** ${this.costFor(entry)}`,
+      typeof fps === 'number' && Number.isFinite(fps) ? `* **FPS during performance spike:** \`${fps} FPS\`` : '',
+      '',
+      '---',
+      '',
+      '## 📈 Input Mutations & Changed Properties',
+      'The scanner detected the following property/input changes triggering change detection:',
       'Changed inputs:',
       changedInputs,
       '',
       'Recent cycles for this component:',
       ...(recentCycles.length > 0 ? recentCycles : ['- none captured']),
       '',
-      'Component-local recommendations from the scanner:',
-      ...this.recommendationsFor(entry).map((item) => `- ${item}`),
+      '---',
       '',
-      'Please suggest concrete Angular fixes for this component. Prioritize reducing render cost and avoiding unnecessary change detection. Focus on OnPush, signals/computed values, stable input identity, track expressions, event handlers, subscriptions, and expensive template work. Do not assume access to source code beyond this diagnostic snapshot.'
+      '## 🧠 Component-local recommendations from the scanner:',
+      'The scanner automatically analyzed this component and surfaced the following optimization recommendations:',
+      ...this.recommendationsFor(entry).map((rec) => `- **[${rec.category}]** ${rec.action}`),
+      '',
+      '---',
+      '',
+      '## 🛠️ Requested Refactoring Instructions',
+      'You are a senior Angular performance engineer. Please suggest concrete optimization and refactoring steps for this component. Your goal is to drastically reduce its rendering cost and avoid redundant change detection cycles.',
+      'Focus on the following modern Angular practices:',
+      '1. **OnPush Change Detection Strategy:** Implement OnPush change detection to stop automatic parent-to-child render propagation.',
+      '2. **Angular Signals Migration:** Convert class inputs (`@Input`), output emitters (`@Output`), and component states to reactive signals and derived `computed()` selectors.',
+      '3. **Optimizing Templates:** Ensure templates do not execute expensive helper methods or getters by moving them to computed signals or component lifecycle caching.',
+      '4. **Stable Object/Array References:** Avoid instantiating array or object literals inside templates or parent component templates that feed into this component\'s inputs.',
+      '5. **Proper List Tracking:** Leverage optimized track expressions in `@for` control flow blocks.',
+      '',
+      'Please return highly descriptive explanations along with complete TypeScript and HTML code blocks illustrating the **Before (Current)** and **After (Optimized)** states of the component. Make all refactored code clean, robust, and ready for production!'
     ].filter(Boolean).join('\n');
   }
 

@@ -177,31 +177,35 @@ function buildAIPrompt(cycles: AngularRenderCycle[], options = getResolvedOption
   const environment = getPromptEnvironment(fps);
 
   return [
-    'I am debugging Angular change-detection performance issues using angular-render-scan. This prompt is self-contained and intentionally includes only the slow/actionable component evidence, not every render entry.',
-    context ? `Project context: ${context}` : '',
+    '# ⚡️ Angular change-detection Performance Audit (via angular-render-scan)',
+    'This prompt is self-contained and includes the telemetry evidence of slow/actionable components in the application.',
+    context ? `* **Project context:** ${context}` : '',
     '',
-    'Environment:',
+    '## 💻 Environment:',
     ...environment,
     '',
-    'Latest render cycle:',
-    `- Cycle id: ${latest.id}`,
-    `- Duration: ${formatMs(latest.duration)}`,
-    `- Rendered components: ${latest.renderedCount}`,
-    latest.slowest ? `- Slowest component: ${latest.slowest.name} (${formatMs(latest.slowest.latestDuration)}, reason: ${latest.slowest.reason ?? 'unknown'})` : '',
-    `- Thresholds: fast <= ${formatMs(options.fastThresholdMs)}, slow >= ${formatMs(options.slowThresholdMs)}`,
-    `- Filters: min duration ${formatMs(options.minDurationMs)}, min render count ${options.minRenderCount}, max listed components ${options.maxLabelCount}`,
+    '## ⏱️ Latest Render Cycle Details:',
+    'Here are the telemetry details of the last captured change detection cycle:',
+    `* **Cycle id:** #${latest.id}`,
+    `* **Duration:** \`${formatMs(latest.duration)}\``,
+    `* **Rendered components count:** ${latest.renderedCount}`,
+    latest.slowest ? `* **Slowest component:** \`${latest.slowest.name}\` (${formatMs(latest.slowest.latestDuration)}, reason: \`${latest.slowest.reason ?? 'unknown'}\`)` : '',
+    `* **Thresholds:** Fast <= \`${formatMs(options.fastThresholdMs)}\` | Slow >= \`${formatMs(options.slowThresholdMs)}\``,
+    `* **Filters:** Min duration \`${formatMs(options.minDurationMs)}\`, min render count ${options.minRenderCount}`,
     '',
-    'Recent cycle history:',
+    '## 📈 Recent cycle history:',
     ...cycles.slice(-8).map(formatPromptCycle),
     '',
-    'Slow/error component issues to fix:',
+    '## 🚨 Slow/error component issues to fix:',
     ...issueEntries.map((entry, index) => formatIssueEntry(entry, index + 1, latest.duration, options.slowThresholdMs)),
     issueEntries.length === 0 ? '- No component exceeded the configured slow threshold in the captured cycles.' : '',
     '',
-    'Reference only, capped top observed components:',
+    '## 📊 Reference metrics (top observed components):',
+    'Overall render footprint and frequencies for active components:',
     ...entries.map((entry, index) => formatReferenceEntry(entry, index + 1)),
     '',
-    'Please identify the likely root causes for each slow/error component issue and suggest concrete Angular fixes. Keep recommendations tied to the listed component evidence. Focus on OnPush strategy, signal/computed usage, expensive template work, unnecessary input identity changes, event handlers, list tracking, and component boundaries. Prioritize the highest estimated cost first. Do not assume access to source code beyond the diagnostics above.'
+    '## 🛠️ Optimization Instructions:',
+    'Please identify the likely root causes for each slow/error component issue and suggest concrete Angular fixes. Focus on ChangeDetectionStrategy.OnPush, signal/computed usage, template calculations, input reference stabilization, event handlers, and list tracking. Prioritize resolving the highest estimated cost first. Please generate complete, refactored TypeScript templates showing the exact optimized before/after structures. Do not assume access to source code beyond this diagnostic snapshot.'
   ].filter(Boolean).join('\n');
 }
 
@@ -224,21 +228,21 @@ function issueEntriesForPrompt(cycles: AngularRenderCycle[], options = getResolv
 }
 
 function formatIssueEntry(entry: AngularRenderEntry, index: number, latestCycleDuration: number, slowThresholdMs: number): string {
-  const changedInputs = entry.changedInputs?.length
-    ? `\n   Changed inputs: ${entry.changedInputs.map((input) => `${input.name} ${input.previous} -> ${input.current}`).join('; ')}`
-    : '\n   Changed inputs: none captured';
   const overBy = Math.max(0, entry.latestDuration - slowThresholdMs);
   const cycleShare = latestCycleDuration > 0 ? (entry.latestDuration / latestCycleDuration) * 100 : 0;
   const estimatedTotalCost = entry.averageDuration * entry.count;
+  const changedInputsStr = entry.changedInputs?.length
+    ? entry.changedInputs.map((input) => `${input.name} ${input.previous} -> ${input.current}`).join('; ')
+    : 'none captured';
 
   return [
-    `${index}. ${entry.name}`,
-    `   Selector: ${entry.selector ?? '-'}`,
-    `   Issue: latest render ${formatMs(entry.latestDuration)} exceeded slow threshold ${formatMs(slowThresholdMs)} by ${formatMs(overBy)}.`,
+    `### 🛑 Component #${index}: \`${entry.name}\``,
+    `   Selector: selector ${entry.selector ?? '-'}`,
+    `   Performance Issue: latest render ${formatMs(entry.latestDuration)} exceeded slow threshold ${formatMs(slowThresholdMs)} by ${formatMs(overBy)}.`,
     `   Cost: ${formatMs(entry.latestDuration)} in latest cycle, about ${cycleShare.toFixed(0)}% of latest cycle time, estimated observed total ${formatMs(estimatedTotalCost)} across ${entry.count} renders.`,
     `   Average render: ${formatMs(entry.averageDuration)}`,
     `   Render reason: ${entry.reason ?? 'unknown'}`,
-    changedInputs
+    `   Changed inputs: ${changedInputsStr}`
   ].join('\n');
 }
 

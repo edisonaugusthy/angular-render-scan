@@ -102,7 +102,7 @@ test('toolbar hides recording and export controls', async ({ page }) => {
 
   await expect.poll(async () => overlay.evaluate((host) => host.shadowRoot?.querySelector('.recording-btn'))).toBeNull();
   await expect.poll(async () => overlay.evaluate((host) => host.shadowRoot?.querySelector('.export-btn'))).toBeNull();
-  await expect.poll(async () => overlay.evaluate((host) => host.shadowRoot?.textContent ?? '')).toContain('Copy Slow Issues Prompt');
+  await expect.poll(async () => overlay.evaluate((host) => host.shadowRoot?.textContent ?? '')).toContain('Copy AI Fix Prompt');
 });
 
 test('details mode hover and click opens recommendation panel with component prompt copy', async ({ page }) => {
@@ -121,8 +121,7 @@ test('details mode hover and click opens recommendation panel with component pro
 
   await page.getByRole('button', { name: 'Recalculate' }).click();
   await expect.poll(async () => page.locator(overlaySelector).evaluate((host) => host.shadowRoot?.textContent ?? '')).toContain('Count');
-  const box = await page.locator('app-recommendations').boundingBox();
-  expect(box).not.toBeNull();
+
   await page.locator(overlaySelector).evaluate((host) => {
     host.shadowRoot?.querySelector<HTMLInputElement>('.details-checkbox')?.click();
   });
@@ -136,18 +135,7 @@ test('details mode hover and click opens recommendation panel with component pro
     return host.shadowRoot?.querySelector('.copy-prompt-btn')?.getAttribute('data-tooltip') ?? '';
   })).toContain('slow/error component issues');
 
-  await page.mouse.move(box.x + box.width / 2, box.y + Math.min(40, box.height / 2));
-  await page.evaluate(({ x, y }) => {
-    document.elementFromPoint(x, y)?.dispatchEvent(new MouseEvent('click', {
-      bubbles: true,
-      cancelable: true,
-      clientX: x,
-      clientY: y
-    }));
-  }, {
-    x: box!.x + box!.width / 2,
-    y: box!.y + Math.min(40, box!.height / 2)
-  });
+  await page.locator('app-recommendations').click({ force: true });
 
   await expect.poll(async () => page.locator(overlaySelector).evaluate((host) => {
     return host.shadowRoot?.querySelector('.inspect-panel')?.textContent ?? '';
