@@ -1,4 +1,5 @@
 import { FpsMeter } from './fps';
+import { CpuMeter } from './cpu';
 import { clearRecording, copyAIPrompt, getRecording } from '../../application/runtime';
 import type { AngularRenderCycle, AngularRenderEntry, AngularRenderScanResolvedOptions } from '../../domain/entities';
 
@@ -69,7 +70,7 @@ const TOOLBAR_CSS = `
   }
   .details-toggle:hover {
     background: #f1f5f9;
-    border-color: rgba(15, 23, 42, 0.15);
+    border: 1px dotted rgba(15, 23, 42, 0.4);
     color: #0f172a;
   }
   .details-toggle input {
@@ -79,7 +80,7 @@ const TOOLBAR_CSS = `
     accent-color: #2563eb;
   }
   .details-toggle.active {
-    border-color: rgba(37, 99, 235, 0.2);
+    border: 1px dotted #2563eb;
     color: #2563eb;
     background: rgba(37, 99, 235, 0.05);
   }
@@ -122,6 +123,98 @@ const TOOLBAR_CSS = `
   .label { color: #64748b; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
   .value { color: #0f172a; font-family: monospace; font-size: 11px; font-weight: 700; white-space: nowrap; }
   .value.fps-drop { color: #ef4444; }
+  .value.cpu-high { color: #ef4444; }
+  .value.cpu-medium { color: #f59e0b; }
+  .metric.cpu-interactive {
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+    border-radius: 6px;
+    padding: 3px 6px;
+    margin: -3px -6px;
+    user-select: none;
+    display: inline-flex;
+    flex-direction: column;
+    position: relative;
+  }
+  .metric.cpu-interactive:hover {
+    background: rgba(37, 99, 235, 0.05);
+    box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.15);
+  }
+  .metric.cpu-interactive:active {
+    transform: scale(0.97);
+  }
+  .metric.cpu-interactive.active {
+    background: rgba(37, 99, 235, 0.08);
+    box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.25);
+  }
+  .metric.cpu-interactive .value {
+    border-bottom: 1.5px dotted rgba(37, 99, 235, 0.4);
+    padding-bottom: 0.5px;
+  }
+  .metric.cpu-interactive:hover .value {
+    border-bottom: 1.5px solid rgba(37, 99, 235, 0.8);
+    color: #2563eb;
+  }
+  .cpu-details-panel {
+    position: fixed;
+    z-index: 2147483647;
+    width: 160px;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 10px;
+    padding: 10px;
+    backdrop-filter: blur(16px);
+    box-shadow: 
+      0 1px 3px rgba(0,0,0,0.02),
+      0 10px 25px rgba(15, 23, 42, 0.08);
+    display: grid;
+    gap: 6px;
+    font-family: Inter, system-ui, -apple-system, sans-serif;
+    color: #0f172a;
+    transition: all 0.2s ease;
+  }
+  .cpu-details-panel .title {
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: #64748b;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.05);
+    padding-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    letter-spacing: 0.05em;
+  }
+  .cpu-details-panel .row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    font-weight: 500;
+  }
+  .cpu-details-panel .row-val {
+    font-family: monospace;
+    font-weight: 700;
+  }
+  .cpu-details-panel .row-val.low { color: #10b981; }
+  .cpu-details-panel .row-val.medium { color: #f59e0b; }
+  .cpu-details-panel .row-val.high { color: #ef4444; }
+  
+  .cpu-bar-bg {
+    width: 100%;
+    height: 4px;
+    background: #e2e8f0;
+    border-radius: 2px;
+    overflow: hidden;
+    margin: 2px 0;
+  }
+  .cpu-bar-fill {
+    height: 100%;
+    transition: width 0.2s ease, background-color 0.2s ease;
+  }
+  .cpu-bar-fill.low { background: #10b981; }
+  .cpu-bar-fill.medium { background: #f59e0b; }
+  .cpu-bar-fill.high { background: #ef4444; }
+
   .toolbar-actions {
     display: flex;
     align-items: center;
@@ -214,27 +307,27 @@ const TOOLBAR_CSS = `
     color: #2563eb;
     font-size: 11px;
     font-weight: 700;
-    min-width: 56px;
+    margin-left: 4px;
   }
   .inspect-panel {
     position: fixed;
     right: 16px;
     bottom: 72px;
     z-index: 2147483647;
-    width: min(340px, calc(100vw - 32px));
+    width: min(300px, calc(100vw - 32px));
     display: grid;
-    gap: 12px;
-    padding: 18px;
+    gap: 8px;
+    padding: 12px;
     border: 1px solid rgba(15, 23, 42, 0.08);
     border-top: 4px solid #3b82f6;
-    border-radius: 14px;
+    border-radius: 12px;
     background: rgba(255, 255, 255, 0.96);
     box-shadow: 
       0 1px 3px rgba(0,0,0,0.02),
-      0 16px 40px rgba(15, 23, 42, 0.12),
+      0 12px 32px rgba(15, 23, 42, 0.1),
       inset 0 1px 0 rgba(255,255,255,0.6);
     color: #0f172a;
-    font: 500 11px/1.4 Inter, system-ui, -apple-system, sans-serif;
+    font: 500 11px/1.3 Inter, system-ui, -apple-system, sans-serif;
     pointer-events: auto;
     backdrop-filter: blur(16px);
     transition: border-top-color 0.2s ease;
@@ -245,13 +338,13 @@ const TOOLBAR_CSS = `
   .panel-head {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
-    gap: 12px;
+    align-items: center;
+    gap: 8px;
     border-bottom: 1px solid rgba(15, 23, 42, 0.04);
-    padding-bottom: 10px;
+    padding-bottom: 6px;
   }
   .panel-title {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 800;
     color: #0f172a;
     overflow-wrap: anywhere;
@@ -265,13 +358,13 @@ const TOOLBAR_CSS = `
   .severity {
     display: inline-flex;
     width: fit-content;
-    padding: 2px 8px;
+    padding: 1px 6px;
     border-radius: 20px;
-    font-size: 9px;
+    font-size: 8px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.02em;
-    margin-top: 4px;
+    margin-top: 2px;
   }
   .severity.slow {
     color: #e11d48;
@@ -291,19 +384,19 @@ const TOOLBAR_CSS = `
   .panel-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 6px;
-    margin: 4px 0;
+    gap: 4px;
+    margin: 2px 0;
   }
   .panel-grid .panel-field {
     background: #f8fafc;
     border: 1px solid rgba(15, 23, 42, 0.05);
-    border-radius: 8px;
-    padding: 8px;
+    border-radius: 6px;
+    padding: 4px;
     text-align: center;
     display: flex;
     flex-direction: column;
     justify-content: center;
-    min-height: 48px;
+    min-height: 36px;
   }
   .panel-grid .panel-label {
     font-size: 8px;
@@ -313,16 +406,16 @@ const TOOLBAR_CSS = `
     letter-spacing: 0.05em;
   }
   .panel-grid .panel-value {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
     color: #0f172a;
-    margin-top: 2px;
+    margin-top: 1px;
   }
   .inspect-panel .panel-field:not(.panel-grid .panel-field) {
     border-top: 1px solid rgba(15, 23, 42, 0.04);
-    padding-top: 10px;
+    padding-top: 6px;
     display: grid;
-    gap: 4px;
+    gap: 2px;
   }
   .inspect-panel .panel-label {
     color: #64748b;
@@ -334,23 +427,23 @@ const TOOLBAR_CSS = `
   .inspect-panel .panel-value {
     color: #0f172a;
     font-size: 11px;
-    line-height: 1.4;
+    line-height: 1.35;
     overflow-wrap: anywhere;
   }
   .panel-list {
     display: grid;
-    gap: 8px;
-    margin-top: 4px;
+    gap: 6px;
+    margin-top: 2px;
   }
   .rec-card {
-    padding: 10px 12px;
-    border-radius: 8px;
+    padding: 6px 10px;
+    border-radius: 6px;
     border: 1px solid rgba(15, 23, 42, 0.05);
     border-left: 3px solid #3b82f6;
     background: #f8fafc;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
     transition: all 0.15s ease;
   }
   .rec-card:hover {
@@ -370,7 +463,7 @@ const TOOLBAR_CSS = `
     background: rgba(16, 185, 129, 0.015);
   }
   .rec-category {
-    font-size: 8px;
+    font-size: 7.5px;
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -379,8 +472,8 @@ const TOOLBAR_CSS = `
   .rec-card.medium .rec-category { color: #d97706; }
   .rec-card.fast .rec-category { color: #059669; }
   .rec-action {
-    font-size: 11px;
-    line-height: 1.45;
+    font-size: 10px;
+    line-height: 1.35;
     color: #334155;
     font-weight: 500;
     margin: 0;
@@ -393,6 +486,8 @@ export class AngularRenderScanOverlay {
   private readonly canvas = document.createElement('canvas');
   private readonly context = this.canvas.getContext('2d');
   private readonly fps = new FpsMeter();
+  private readonly cpu = new CpuMeter(() => this.renderToolbar());
+  private showCpuDetails = false;
   private raf = 0;
   private latestFps = 0;
   private lastFpsSampleAt = 0;
@@ -550,6 +645,7 @@ export class AngularRenderScanOverlay {
   private globalMoveListener?: (e: MouseEvent) => void;
 
   destroy(): void {
+    this.cpu.destroy();
     cancelAnimationFrame(this.raf);
     window.removeEventListener('resize', this.resize);
     if (this.globalClickListener) {
@@ -574,6 +670,7 @@ export class AngularRenderScanOverlay {
 
   private readonly loop = (): void => {
     this.fps.mark();
+    this.cpu.markFrame();
     const now = performance.now();
     if (now - this.lastFpsSampleAt >= 500) {
       this.latestFps = this.fps.value;
@@ -707,7 +804,7 @@ export class AngularRenderScanOverlay {
     this.context.save();
     this.context.strokeStyle = rgba(color, 0.95);
     this.context.lineWidth = 3;
-    this.context.setLineDash([6, 4]);
+    this.context.setLineDash([2, 4]);
     this.context.strokeRect(rect.left, rect.top, rect.width, rect.height);
     this.context.restore();
   }
@@ -748,8 +845,12 @@ export class AngularRenderScanOverlay {
 
     const cycle = this.latestCycle;
     const displayedFps = this.latestFps || this.fps.value;
+    const cpuVal = this.cpu.value;
+    const cpuClass = cpuVal > 50 ? 'cpu-high' : cpuVal > 20 ? 'cpu-medium' : '';
+
     const htmlChanged = this.replaceToolbarHtml(container, `
       ${this.inspectPanelHtml()}
+      ${this.cpuDetailsHtml()}
       <div class="toolbar" style="right: ${this.toolbarX}px; bottom: ${this.toolbarY}px;">
         <label class="switch">
           <input type="checkbox" ${this.options.enabled ? 'checked' : ''} aria-label="Angular Render Scan enabled" />
@@ -757,6 +858,10 @@ export class AngularRenderScanOverlay {
           <span class="switch-text">${this.options.enabled ? 'On' : 'Off'}</span>
         </label>
         ${this.metric('FPS', this.options.showFPS ? String(displayedFps) : '-', this.getFpsClass(displayedFps))}
+        <span class="metric cpu-interactive ${this.showCpuDetails ? 'active' : ''}" data-tooltip="Click to toggle detailed CPU / Main Thread metrics">
+          <span class="label">CPU</span>
+          <span class="value ${cpuClass}">${cpuVal}%</span>
+        </span>
         ${this.metric('Cycle', cycle ? `${cycle.duration.toFixed(1)}ms` : '-')}
         ${this.metric('Count', cycle ? String(cycle.renderedCount) : '0')}
         ${this.metric('Slowest', cycle?.slowest ? cycle.slowest.name : '-')}
@@ -769,7 +874,7 @@ export class AngularRenderScanOverlay {
           ${this.options.showCopyPrompt ? '<button class="action-btn copy-prompt-btn" aria-label="Copy prompt for slow render issues" data-tooltip="Copy an AI-ready prompt with only the captured slow/error component issues and their runtime evidence.">Copy AI Fix Prompt</button>' : ''}
           <button class="clear-btn" aria-label="Clear stats">Clear</button>
         </span>
-        <span class="status" aria-live="polite">${escapeHtml(this.copyStatus)}</span>
+        ${this.copyStatus ? `<span class="status" aria-live="polite">${escapeHtml(this.copyStatus)}</span>` : ''}
       </div>
     `);
     
@@ -781,6 +886,11 @@ export class AngularRenderScanOverlay {
     
     toolbarEl?.querySelector('input')?.addEventListener('change', (event) => {
       this.onToggle((event.target as HTMLInputElement).checked);
+    }, { once: true });
+
+    toolbarEl?.querySelector('.cpu-interactive')?.addEventListener('click', () => {
+      this.showCpuDetails = !this.showCpuDetails;
+      this.renderToolbar();
     }, { once: true });
     
     toolbarEl?.querySelector('.clear-btn')?.addEventListener('click', () => {
@@ -913,6 +1023,42 @@ export class AngularRenderScanOverlay {
 
   private panelField(label: string, value: string): string {
     return `<span class="panel-field"><span class="panel-label">${escapeHtml(label)}</span><span class="panel-value">${escapeHtml(value)}</span></span>`;
+  }
+
+  private cpuDetailsHtml(): string {
+    if (!this.showCpuDetails) {
+      return '';
+    }
+    const details = this.cpu.getDetails();
+    const fillClass = details.percentage > 50 ? 'high' : details.percentage > 20 ? 'medium' : 'low';
+    
+    return `
+      <div class="cpu-details-panel" style="right: ${this.toolbarX + 180}px; bottom: ${this.toolbarY + 45}px;" aria-label="CPU details breakdown">
+        <div class="title">
+          <span>CPU Usage</span>
+          <span style="font-size: 8px; font-weight: normal; color: #94a3b8;">Main Thread</span>
+        </div>
+        <div class="cpu-bar-bg">
+          <div class="cpu-bar-fill ${fillClass}" style="width: ${details.percentage}%;"></div>
+        </div>
+        <div class="row">
+          <span style="color: #64748b;">Busy Rate</span>
+          <span class="row-val ${fillClass}">${details.percentage}%</span>
+        </div>
+        <div class="row">
+          <span style="color: #64748b;">Blocking Tasks</span>
+          <span class="row-val">${details.longTaskCount}</span>
+        </div>
+        <div class="row">
+          <span style="color: #64748b;">Max Task Delay</span>
+          <span class="row-val">${details.maxDuration}ms</span>
+        </div>
+        <div class="row" data-tooltip="Total time tasks spent blocking the main thread beyond a 50ms budget in the last 2s">
+          <span style="color: #64748b;">Total Block Time</span>
+          <span class="row-val">${details.totalBlockingTime}ms</span>
+        </div>
+      </div>
+    `;
   }
 
   private setCopyStatus(status: string): void {

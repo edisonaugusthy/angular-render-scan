@@ -156,3 +156,32 @@ test('details mode hover and click opens recommendation panel with component pro
     return host.shadowRoot?.querySelector('.inspect-panel');
   })).toBeNull();
 });
+
+test('toolbar can toggle live CPU details panel', async ({ page }) => {
+  await page.goto('/');
+  const overlay = page.locator(overlaySelector);
+  
+  await expect.poll(async () => overlay.evaluate((host) => {
+    return host.shadowRoot?.querySelector('.cpu-interactive')?.textContent ?? '';
+  })).toContain('CPU');
+
+  await expect.poll(async () => overlay.evaluate((host) => {
+    return host.shadowRoot?.querySelector('.cpu-details-panel');
+  })).toBeNull();
+
+  await overlay.evaluate((host) => {
+    host.shadowRoot?.querySelector<HTMLElement>('.cpu-interactive')?.click();
+  });
+
+  await expect.poll(async () => overlay.evaluate((host) => {
+    return host.shadowRoot?.querySelector('.cpu-details-panel')?.textContent ?? '';
+  })).toContain('CPU Usage');
+
+  await overlay.evaluate((host) => {
+    host.shadowRoot?.querySelector<HTMLElement>('.cpu-interactive')?.click();
+  });
+
+  await expect.poll(async () => overlay.evaluate((host) => {
+    return host.shadowRoot?.querySelector('.cpu-details-panel');
+  })).toBeNull();
+});
