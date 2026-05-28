@@ -26,6 +26,29 @@
   --transition-fast: 0.15s ease;
 }
 
+:root.dark {
+  --bg-primary: #0f172a;
+  --bg-panel: rgba(30, 41, 59, 0.75);
+  --bg-panel-inner: #1e293b;
+  --border-cyber: rgba(255, 255, 255, 0.08);
+  --border-glow: #60a5fa;
+  
+  --color-neon-cyan: #3b82f6;
+  --color-neon-purple: #a78bfa;
+  --color-neon-rose: #fb7185;
+  
+  --text-primary: #f8fafc;
+  --text-muted: #94a3b8;
+  --text-cyber: #3b82f6;
+  
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  
+  --shadow-glow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+  --shadow-glow-strong: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
 * {
   box-sizing: border-box;
   margin: 0;

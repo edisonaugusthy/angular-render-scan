@@ -83,7 +83,7 @@ test('toolbar can copy an AI performance prompt', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Recalculate' }).click();
   const overlay = page.locator(overlaySelector);
-  await expect.poll(async () => overlay.evaluate((host) => host.shadowRoot?.textContent ?? '')).toContain('Count');
+  await expect.poll(async () => overlay.evaluate((host) => host.shadowRoot?.textContent ?? '')).toContain('Wasted');
   await overlay.evaluate((host) => {
     host.shadowRoot?.querySelector<HTMLButtonElement>('.copy-prompt-btn')?.click();
   });
@@ -96,13 +96,22 @@ test('toolbar can copy an AI performance prompt', async ({ page }) => {
   await expect.poll(async () => overlay.evaluate((host) => host.shadowRoot?.textContent ?? '')).toContain('Copied');
 });
 
-test('toolbar hides recording and export controls', async ({ page }) => {
+test('toolbar displays and triggers export session controls', async ({ page }) => {
   await page.goto('/');
   const overlay = page.locator(overlaySelector);
 
-  await expect.poll(async () => overlay.evaluate((host) => host.shadowRoot?.querySelector('.recording-btn'))).toBeNull();
-  await expect.poll(async () => overlay.evaluate((host) => host.shadowRoot?.querySelector('.export-btn'))).toBeNull();
-  await expect.poll(async () => overlay.evaluate((host) => host.shadowRoot?.textContent ?? '')).toContain('Copy AI Fix Prompt');
+  await expect.poll(async () => overlay.evaluate((host) => {
+    return host.shadowRoot?.querySelector('.export-btn') !== null;
+  })).toBe(true);
+
+  await page.getByRole('button', { name: 'Recalculate' }).click();
+
+  const downloadPromise = page.waitForEvent('download');
+  await overlay.evaluate((host) => {
+    host.shadowRoot?.querySelector<HTMLButtonElement>('.export-btn')?.click();
+  });
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toContain('angular-render-scan-session-');
 });
 
 test('details mode hover and click opens recommendation panel with component prompt copy', async ({ page }) => {
@@ -120,7 +129,7 @@ test('details mode hover and click opens recommendation panel with component pro
   await page.evaluate(() => (window as any).AngularRenderScan.setOptions({ animationSpeed: 'slow' }));
 
   await page.getByRole('button', { name: 'Recalculate' }).click();
-  await expect.poll(async () => page.locator(overlaySelector).evaluate((host) => host.shadowRoot?.textContent ?? '')).toContain('Count');
+  await expect.poll(async () => page.locator(overlaySelector).evaluate((host) => host.shadowRoot?.textContent ?? '')).toContain('Wasted');
 
   await page.locator(overlaySelector).evaluate((host) => {
     host.shadowRoot?.querySelector<HTMLInputElement>('.details-checkbox')?.click();
@@ -184,4 +193,38 @@ test('toolbar can toggle live CPU details panel', async ({ page }) => {
   await expect.poll(async () => overlay.evaluate((host) => {
     return host.shadowRoot?.querySelector('.cpu-details-panel');
   })).toBeNull();
+});
+
+test('wasted render counter and mutation details appear in toolbar and details panel', async ({ page }) => {
+  await page.goto('/');
+  const overlay = page.locator(overlaySelector);
+
+  await page.locator('app-product-card').first().getByRole('button', { name: 'Add to Cart' }).click();
+
+  await expect.poll(async () => overlay.evaluate((host) => host.shadowRoot?.textContent ?? '')).toContain('Wasted');
+
+  await overlay.evaluate((host) => {
+    host.shadowRoot?.querySelector<HTMLInputElement>('.details-checkbox')?.click();
+  });
+
+  await page.locator('app-shopping-cart').click({ force: true });
+
+  await expect.poll(async () => overlay.evaluate((host) => host.shadowRoot?.querySelector('.inspect-panel')?.textContent ?? '')).toContain('Wasted Renders');
+  await expect.poll(async () => overlay.evaluate((host) => host.shadowRoot?.querySelector('.inspect-panel')?.textContent ?? '')).toContain('DOM Mutation Type');
+});
+
+test('waterfall panel can be toggled via sparkline', async ({ page }) => {
+  await page.goto('/');
+  const overlay = page.locator(overlaySelector);
+
+  await page.getByRole('button', { name: 'Recalculate' }).click();
+
+  await expect.poll(async () => overlay.evaluate((host) => host.shadowRoot?.querySelector('.sparkline-toggle') !== null)).toBe(true);
+  await expect.poll(async () => overlay.evaluate((host) => host.shadowRoot?.querySelector('.waterfall-panel') !== null)).toBe(false);
+
+  await overlay.evaluate((host) => {
+    host.shadowRoot?.querySelector<HTMLElement>('.sparkline-toggle')?.click();
+  });
+
+  await expect.poll(async () => overlay.evaluate((host) => host.shadowRoot?.querySelector('.waterfall-panel')?.textContent ?? '')).toContain('Waterfall');
 });

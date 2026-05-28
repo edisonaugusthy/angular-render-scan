@@ -9,6 +9,9 @@ import {
   scan,
   setOptions,
   setTaskScheduler,
+  getSessionData,
+  getWastedStats,
+  getLeakedComponents
 } from '../../application/runtime';
 import { recordComponentCheck, registerComponent, unregisterComponent } from '../../application/stats';
 import type { AngularRenderScanOptions } from '../../domain/entities';
@@ -59,7 +62,24 @@ export class AngularRenderScanMarkDirective implements OnDestroy {
       return;
     }
 
-    const entry = recordComponentCheck(this.id, selfDuration, cycleId);
+    let depth = 1;
+    let curr = this.parent;
+    while (curr) {
+      depth++;
+      curr = curr.parent;
+    }
+
+    const entry = recordComponentCheck(
+      this.id,
+      selfDuration,
+      cycleId,
+      {},
+      {
+        startTime: this.checkStartedAt,
+        totalDuration,
+        depth
+      }
+    );
     if (entry) {
       window.dispatchEvent(new CustomEvent('angular-render-scan:render', { detail: entry }));
     }
@@ -164,6 +184,9 @@ function registerGlobalApplicationRef(appRef: ApplicationRef): void {
       setOptions: typeof setOptions;
       getAIPrompt: typeof getAIPrompt;
       copyAIPrompt: typeof copyAIPrompt;
+      getSessionData: () => any;
+      getWastedStats: () => any;
+      getLeakedComponents: () => any;
       stop: () => void;
     };
   };
@@ -174,6 +197,9 @@ function registerGlobalApplicationRef(appRef: ApplicationRef): void {
     setOptions,
     getAIPrompt,
     copyAIPrompt,
+    getSessionData,
+    getWastedStats,
+    getLeakedComponents,
     stop: () => {
       import('../../application/runtime').then(m => m.stop());
       restoreApplicationRef(appRef);

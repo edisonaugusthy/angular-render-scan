@@ -1,6 +1,19 @@
-import { bootstrapApplication } from '@angular/platform-browser';
-import { ChangeDetectionStrategy, Component, computed, signal, WritableSignal, effect, input, output, OnDestroy } from '@angular/core';
-import { AngularRenderScanMarkDirective, provideAngularRenderScan } from 'angular-render-scan';
+import { bootstrapApplication } from "@angular/platform-browser";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  signal,
+  WritableSignal,
+  effect,
+  input,
+  output,
+  OnDestroy,
+} from "@angular/core";
+import {
+  AngularRenderScanMarkDirective,
+  provideAngularRenderScan,
+} from "angular-render-scan";
 
 interface Product {
   id: number;
@@ -11,12 +24,24 @@ interface Product {
 }
 
 const PRODUCTS: Product[] = [
-  { id: 1, title: 'Developer Coffee', price: 29.99, icon: '☕', description: 'Dark roast, high caffeine.' },
-  { id: 2, title: 'Mechanical Keyboard', price: 149.00, icon: '⌨️', description: 'Clicky blue switches.' },
+  {
+    id: 1,
+    title: "Developer Coffee",
+    price: 29.99,
+    icon: "☕",
+    description: "Dark roast, high caffeine.",
+  },
+  {
+    id: 2,
+    title: "Mechanical Keyboard",
+    price: 149.0,
+    icon: "⌨️",
+    description: "Clicky blue switches.",
+  },
 ];
 
 @Component({
-  selector: 'app-product-card',
+  selector: "app-product-card",
   standalone: true,
   imports: [AngularRenderScanMarkDirective],
   template: `
@@ -32,7 +57,7 @@ const PRODUCTS: Product[] = [
       </div>
     </article>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 class ProductCardComponent {
   readonly product = input.required<Product>();
@@ -40,7 +65,7 @@ class ProductCardComponent {
 }
 
 @Component({
-  selector: 'app-cart-item',
+  selector: "app-cart-item",
   standalone: true,
   imports: [AngularRenderScanMarkDirective],
   template: `
@@ -51,7 +76,7 @@ class ProductCardComponent {
         <button class="icon-btn" (click)="onRemove.emit(item())">❌</button>
       </div>
     </div>
-  `
+  `,
 })
 class CartItemComponent {
   readonly item = input.required<Product>();
@@ -60,7 +85,7 @@ class CartItemComponent {
 }
 
 @Component({
-  selector: 'app-shopping-cart',
+  selector: "app-shopping-cart",
   standalone: true,
   imports: [AngularRenderScanMarkDirective, CartItemComponent],
   template: `
@@ -69,42 +94,59 @@ class CartItemComponent {
         <span class="kicker">Signal cart</span>
         <h2>Your Cart</h2>
       </div>
-      <p class="cart-summary">{{ totalItems() }} items · \${{ totalPrice().toFixed(2) }}</p>
-      
+      <p class="cart-summary">
+        {{ totalItems() }} items · \${{ totalPrice().toFixed(2) }}
+      </p>
+
       <div class="cart-items">
         @if (cartKeys().length === 0) {
           <div class="empty-cart">Cart is empty 🛒</div>
         }
         @for (key of cartKeys(); track key) {
-          <app-cart-item 
-            [item]="cartMap()().get(key)!.product" 
+          <app-cart-item
+            [item]="cartMap()().get(key)!.product"
             [quantity]="cartMap()().get(key)!.quantity"
             (onRemove)="removeFromCart($event)"
           />
         }
       </div>
-      <button class="checkout-btn" [disabled]="totalItems() === 0" (click)="checkout()">Checkout</button>
+      <button
+        class="checkout-btn"
+        [disabled]="totalItems() === 0"
+        (click)="checkout()"
+      >
+        Checkout
+      </button>
     </aside>
-  `
+  `,
 })
 class ShoppingCartComponent {
-  readonly cartMap = input.required<WritableSignal<Map<number, {
-    product: Product;
-    quantity: number;
-  }>>>();
+  readonly cartMap = input.required<
+    WritableSignal<
+      Map<
+        number,
+        {
+          product: Product;
+          quantity: number;
+        }
+      >
+    >
+  >();
   readonly checkoutEvent = output<void>();
 
   readonly cartKeys = computed(() => Array.from(this.cartMap()().keys()));
-  
+
   readonly totalItems = computed(() => {
     let total = 0;
-    this.cartMap()().forEach((v: any) => total += v.quantity);
+    this.cartMap()().forEach((v: any) => (total += v.quantity));
     return total;
   });
 
   readonly totalPrice = computed(() => {
     let total = 0;
-    this.cartMap()().forEach((v: any) => total += (v.product.price * v.quantity));
+    this.cartMap()().forEach(
+      (v: any) => (total += v.product.price * v.quantity),
+    );
     return total;
   });
 
@@ -128,7 +170,7 @@ class ShoppingCartComponent {
 }
 
 @Component({
-  selector: 'app-recommendations',
+  selector: "app-recommendations",
   standalone: true,
   imports: [AngularRenderScanMarkDirective],
   template: `
@@ -137,21 +179,24 @@ class ShoppingCartComponent {
         <span class="kicker">Slow path (Default CD)</span>
         <h2>Recommendation Engine</h2>
       </div>
-      <p>Runs intentionally expensive computed work so the scanner can surface a slow component.</p>
+      <p>
+        Runs intentionally expensive computed work so the scanner can surface a
+        slow component.
+      </p>
       <div class="recommendation-badge">
         <span>Confidence</span>
         <strong>{{ expensiveScore() }}</strong>
       </div>
       <button type="button" (click)="recalculate()">Recalculate</button>
     </section>
-  `
+  `,
 })
 class RecommendationsComponent {
   readonly seed = signal(2000);
   readonly expensiveScore = computed(() => {
     let total = 0;
     for (let i = 0; i < this.seed() * 400; i += 1) {
-      total += Math.sqrt((i % 97) + total % 13);
+      total += Math.sqrt((i % 97) + (total % 13));
     }
     return Math.round(total).toLocaleString();
   });
@@ -162,16 +207,39 @@ class RecommendationsComponent {
 }
 
 @Component({
-  selector: 'app-hero-banner',
+  selector: "app-hero-banner",
   standalone: true,
   template: `
     <section angularRenderScanMark="HeroBanner" class="hero-banner">
       <div class="hero-brand">
         <div class="logo-container">
-          <svg class="logo-svg" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <svg
+            class="logo-svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M12 2L2 7L12 12L22 7L12 2Z"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <path
+              d="M2 17L12 22L22 17"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <path
+              d="M2 12L12 17L22 12"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
           </svg>
         </div>
         <div class="brand-details">
@@ -185,34 +253,57 @@ class RecommendationsComponent {
       </div>
       <div class="hero-actions">
         <span class="zone-badge">Zone.js + Signals</span>
-        <span class="status-pill"><span class="pulse-dot"></span> SCANNER ACTIVE</span>
+        <span class="status-pill"
+          ><span class="pulse-dot"></span> SCANNER ACTIVE</span
+        >
+        <button
+          class="theme-toggle-btn"
+          style="margin-right: 8px;"
+          (click)="toggleDarkMode()"
+        >
+          THEME: {{ darkMode().toUpperCase() }}
+        </button>
         <button class="theme-toggle-btn" (click)="toggleGrid()">
-          GRID: {{ showGrid() ? 'ON' : 'OFF' }}
+          GRID: {{ showGrid() ? "ON" : "OFF" }}
         </button>
       </div>
     </section>
-  `
+  `,
 })
 class HeroBannerComponent {
   readonly showGrid = signal(true);
+  readonly darkMode = signal<"light" | "dark">("light");
+
   toggleGrid() {
-    this.showGrid.update(v => !v);
+    this.showGrid.update((v) => !v);
     if (this.showGrid()) {
-      document.body.classList.remove('grid-lines-off');
+      document.body.classList.remove("grid-lines-off");
     } else {
-      document.body.classList.add('grid-lines-off');
+      document.body.classList.add("grid-lines-off");
+    }
+  }
+
+  toggleDarkMode() {
+    const next = this.darkMode() === "light" ? "dark" : "light";
+    this.darkMode.set(next);
+    if (next === "dark") {
+      document.documentElement.classList.add("dark");
+      (window as any).AngularRenderScan?.setOptions({ darkMode: "dark" });
+    } else {
+      document.documentElement.classList.remove("dark");
+      (window as any).AngularRenderScan?.setOptions({ darkMode: "light" });
     }
   }
 }
 
 @Component({
-  selector: 'app-root',
+  selector: "app-root",
   standalone: true,
   imports: [
     ProductCardComponent,
     ShoppingCartComponent,
     RecommendationsComponent,
-    AngularRenderScanMarkDirective
+    AngularRenderScanMarkDirective,
   ],
   template: `
     <main angularRenderScanMark="AppRoot">
@@ -225,13 +316,33 @@ class HeroBannerComponent {
             <span class="kicker">SYSTEM CONTROLLER</span>
             <h2>Diagnostics Control</h2>
           </div>
-          
-          <div class="control-actions">
-            <button class="cyber-btn primary-glow" (click)="triggerSpike()">
-              ⚡ Trigger CD Spike
-            </button>
-            <button class="cyber-btn secondary-glow" (click)="toggleAutoStream()">
-              {{ autoStreamActive() ? '🛑 Stop Auto-Stream' : '🚀 Start Auto-Stream' }}
+
+          <div
+            class="control-actions"
+            style="display: flex; flex-direction: column; gap: 8px;"
+          >
+            <div style="display: flex; gap: 8px;">
+              <button
+                class="cyber-btn primary-glow"
+                style="flex: 1;"
+                (click)="triggerSpike()"
+              >
+                ⚡ Trigger Spike
+              </button>
+              <button
+                class="cyber-btn secondary-glow"
+                style="flex: 1;"
+                (click)="toggleAutoStream()"
+              >
+                {{ autoStreamActive() ? "🛑 Stop Stream" : "🚀 Start Stream" }}
+              </button>
+            </div>
+            <button
+              class="cyber-btn"
+              style="background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.4); color: #ef4444;"
+              (click)="simulateMemoryLeak()"
+            >
+              ⚠️ Simulate Memory Leak
             </button>
           </div>
 
@@ -242,13 +353,19 @@ class HeroBannerComponent {
               @if (auditLogs().length === 0) {
                 <div class="log-line">
                   <span class="log-time">[SYSTEM]</span>
-                  <span class="log-msg info">Listening for Angular render scan telemetry...</span>
+                  <span class="log-msg info"
+                    >Listening for Angular render scan telemetry...</span
+                  >
                 </div>
               }
               @for (log of auditLogs(); track log.time + log.message) {
                 <div class="log-line">
                   <span class="log-time">[{{ log.time }}]</span>
-                  <span class="log-msg" [class.warn]="log.type === 'warn'" [class.info]="log.type !== 'warn'">
+                  <span
+                    class="log-msg"
+                    [class.warn]="log.type === 'warn'"
+                    [class.info]="log.type !== 'warn'"
+                  >
                     {{ log.message }}
                   </span>
                 </div>
@@ -263,10 +380,13 @@ class HeroBannerComponent {
             <span class="kicker">SANDBOX NODES</span>
             <h2>Component Grid Matrix</h2>
           </div>
-          
+
           <div class="nodes-container">
             @for (product of products; track product.id) {
-              <app-product-card [product]="product" (onAdd)="addToCart($event)" />
+              <app-product-card
+                [product]="product"
+                (onAdd)="addToCart($event)"
+              />
             }
 
             <app-recommendations />
@@ -275,31 +395,41 @@ class HeroBannerComponent {
 
         <!-- RIGHT PANEL: Shopping Cart -->
         <section class="cyber-panel pipeline-panel">
-          <app-shopping-cart [cartMap]="cartMap" (checkoutEvent)="onCheckout()" />
+          <app-shopping-cart
+            [cartMap]="cartMap"
+            (checkoutEvent)="onCheckout()"
+          />
         </section>
       </div>
     </main>
-  `
+  `,
 })
 class AppComponent implements OnDestroy {
   readonly products = PRODUCTS;
-  readonly cartMap = signal(new Map<number, { product: Product, quantity: number }>());
-  
+  readonly cartMap = signal(
+    new Map<number, { product: Product; quantity: number }>(),
+  );
+
   readonly reactiveCounter = signal(0);
   readonly autoStreamActive = signal(false);
-  readonly auditLogs = signal<{ time: string, message: string, type: string }[]>([]);
-  
+  readonly auditLogs = signal<
+    { time: string; message: string; type: string }[]
+  >([]);
+
   private streamIntervalId: any = null;
 
   constructor() {
-    if (typeof window !== 'undefined') {
-      window.addEventListener('angular-render-scan:render', this.onRenderEvent);
+    if (typeof window !== "undefined") {
+      window.addEventListener("angular-render-scan:render", this.onRenderEvent);
     }
   }
 
   ngOnDestroy() {
-    if (typeof window !== 'undefined') {
-      window.removeEventListener('angular-render-scan:render', this.onRenderEvent);
+    if (typeof window !== "undefined") {
+      window.removeEventListener(
+        "angular-render-scan:render",
+        this.onRenderEvent,
+      );
     }
     if (this.streamIntervalId) {
       clearInterval(this.streamIntervalId);
@@ -307,15 +437,21 @@ class AppComponent implements OnDestroy {
   }
 
   private readonly onRenderEvent = (e: Event) => {
-    const detail = (e as CustomEvent<{ name: string; duration: number }>).detail;
-    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-    this.auditLogs.update(logs => [
-      { 
-        time: now, 
-        message: `Render: [${detail.name}] in ${detail.duration.toFixed(2)}ms`, 
-        type: detail.duration > 15 ? 'warn' : 'info' 
+    const detail = (e as CustomEvent<{ name: string; duration: number }>)
+      .detail;
+    const now = new Date().toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+    this.auditLogs.update((logs) => [
+      {
+        time: now,
+        message: `Render: [${detail.name}] in ${detail.duration.toFixed(2)}ms`,
+        type: detail.duration > 15 ? "warn" : "info",
       },
-      ...logs.slice(0, 14)
+      ...logs.slice(0, 14),
     ]);
   };
 
@@ -331,28 +467,49 @@ class AppComponent implements OnDestroy {
   }
 
   onCheckout() {
-    alert('Thanks for your purchase!');
+    alert("Thanks for your purchase!");
   }
 
   triggerSpike() {
     for (let i = 0; i < 30; i++) {
       setTimeout(() => {
-        this.reactiveCounter.update(c => c + 1);
+        this.reactiveCounter.update((c) => c + 1);
       }, i * 15);
     }
   }
 
   toggleAutoStream() {
-    this.autoStreamActive.update(v => !v);
+    this.autoStreamActive.update((v) => !v);
     if (this.autoStreamActive()) {
       this.streamIntervalId = setInterval(() => {
-        this.reactiveCounter.update(c => c + 1);
+        this.reactiveCounter.update((c) => c + 1);
       }, 250);
     } else {
       if (this.streamIntervalId) {
         clearInterval(this.streamIntervalId);
         this.streamIntervalId = null;
       }
+    }
+  }
+
+  simulateMemoryLeak() {
+    const card = document.querySelector("app-product-card");
+    if (card) {
+      card.remove(); // Remove element dynamically to create a disconnected leak!
+      this.auditLogs.update((logs) => [
+        {
+          time: new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: false,
+          }),
+          message:
+            "SIMULATED LEAK: Removed product card DOM element without destroying component!",
+          type: "warn",
+        },
+        ...logs.slice(0, 14),
+      ]);
     }
   }
 }
@@ -362,9 +519,9 @@ bootstrapApplication(AppComponent, {
     provideAngularRenderScan({
       enabled: true,
       showToolbar: true,
-      animationSpeed: 'fast',
+      animationSpeed: "slow",
       showFPS: true,
-      log: true
-    })
-  ]
+      log: true,
+    }),
+  ],
 }).catch((error: unknown) => console.error(error));

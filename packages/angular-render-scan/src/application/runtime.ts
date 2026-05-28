@@ -1,7 +1,14 @@
 import { AngularRenderScanOverlay } from '../infrastructure/ui/overlay';
 import { getResolvedOptions, resolveOptions, setResolvedOptions } from '../domain/options';
-import { finishCycle, resetStats, startCycle } from './stats';
-import type { AngularRenderCycle, AngularRenderEntry, AngularRenderScanOptions } from '../domain/entities';
+import { finishCycle, resetStats, startCycle, getWastedStats, getLeakedComponents } from './stats';
+import type {
+  AngularRenderCycle,
+  AngularRenderEntry,
+  AngularRenderScanOptions,
+  BudgetViolation,
+  SessionExportData,
+  WastedStats
+} from '../domain/entities';
 
 let overlay: AngularRenderScanOverlay | undefined;
 let activeCycleId = 0;
@@ -9,6 +16,7 @@ let activeCycleStartedAt = 0;
 let lastCycle: AngularRenderCycle | undefined;
 let implicitCycleScheduled = false;
 let recentCycles: AngularRenderCycle[] = [];
+let activeSessionBudgetViolations: BudgetViolation[] = [];
 
 let scheduleTask = (fn: () => void) => queueMicrotask(fn);
 
@@ -42,6 +50,7 @@ export function stop(): void {
   activeCycleId = 0;
   activeCycleStartedAt = 0;
   implicitCycleScheduled = false;
+  activeSessionBudgetViolations = [];
   
   if (typeof window !== 'undefined') {
     const globalWindow = window as any;
@@ -65,6 +74,20 @@ export function beginCycle(): number {
   return activeCycleId;
 }
 
+function getRendersInLastSecond(id: string, now: number): number {
+  let count = 0;
+  for (let i = recentCycles.length - 1; i >= 0; i--) {
+    const cycle = recentCycles[i];
+    if (now - cycle.finishedAt > 1000) {
+      break;
+    }
+    if (cycle.entries.some(e => e.id === id)) {
+      count++;
+    }
+  }
+  return count;
+}
+
 export function endCycle(cycleId = activeCycleId): AngularRenderCycle | undefined {
   if (!cycleId) {
     return undefined;
@@ -75,6 +98,70 @@ export function endCycle(cycleId = activeCycleId): AngularRenderCycle | undefine
   const cycle = finishCycle(cycleId, activeCycleStartedAt, finishedAt, options);
   lastCycle = cycle;
   recordRecentCycle(cycle, options.maxRecordedCycles);
+
+  // Budget validation checking
+  const now = performance.now();
+  const realNowTimestamp = Date.now();
+  if (options.budgets) {
+    const { warnMs, errorMs, maxRendersPerSecond } = options.budgets;
+    for (const entry of cycle.entries) {
+      // Check warnMs
+      if (warnMs !== undefined && entry.latestDuration > warnMs && entry.latestDuration <= (errorMs ?? Infinity)) {
+        const violation: BudgetViolation = {
+          componentName: entry.name,
+          selector: entry.selector ?? '',
+          type: 'warn',
+          actual: entry.latestDuration,
+          budget: warnMs,
+          message: `Component ${entry.name} exceeded warning budget of ${warnMs}ms (took ${entry.latestDuration.toFixed(1)}ms)`,
+          timestamp: realNowTimestamp
+        };
+        activeSessionBudgetViolations.push(violation);
+        options.onBudgetViolation?.(violation);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('angular-render-scan:budget-violation', { detail: violation }));
+        }
+      }
+      // Check errorMs
+      if (errorMs !== undefined && entry.latestDuration > errorMs) {
+        const violation: BudgetViolation = {
+          componentName: entry.name,
+          selector: entry.selector ?? '',
+          type: 'error',
+          actual: entry.latestDuration,
+          budget: errorMs,
+          message: `Component ${entry.name} exceeded error budget of ${errorMs}ms (took ${entry.latestDuration.toFixed(1)}ms)`,
+          timestamp: realNowTimestamp
+        };
+        activeSessionBudgetViolations.push(violation);
+        options.onBudgetViolation?.(violation);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('angular-render-scan:budget-violation', { detail: violation }));
+        }
+      }
+      // Check render rate (maxRendersPerSecond)
+      if (maxRendersPerSecond !== undefined) {
+        const rendersInLastSec = getRendersInLastSecond(entry.id, now);
+        if (rendersInLastSec > maxRendersPerSecond) {
+          const violation: BudgetViolation = {
+            componentName: entry.name,
+            selector: entry.selector ?? '',
+            type: 'render-rate',
+            actual: rendersInLastSec,
+            budget: maxRendersPerSecond,
+            message: `Component ${entry.name} exceeded max render rate budget of ${maxRendersPerSecond}/sec (rendered ${rendersInLastSec} times in last second)`,
+            timestamp: realNowTimestamp
+          };
+          activeSessionBudgetViolations.push(violation);
+          options.onBudgetViolation?.(violation);
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('angular-render-scan:budget-violation', { detail: violation }));
+          }
+        }
+      }
+    }
+  }
+
   for (const entry of cycle.entries) {
     options.onRender?.(entry);
   }
@@ -176,6 +263,9 @@ function buildAIPrompt(cycles: AngularRenderCycle[], options = getResolvedOption
   const context = options.promptContext.trim();
   const environment = getPromptEnvironment(fps);
 
+  const slowThreshold = options.budgets?.warnMs ?? 10;
+  const fastThreshold = slowThreshold / 2;
+
   return [
     '# ⚡️ Angular change-detection Performance Audit (via angular-render-scan)',
     'This prompt is self-contained and includes the telemetry evidence of slow/actionable components in the application.',
@@ -190,14 +280,14 @@ function buildAIPrompt(cycles: AngularRenderCycle[], options = getResolvedOption
     `* **Duration:** \`${formatMs(latest.duration)}\``,
     `* **Rendered components count:** ${latest.renderedCount}`,
     latest.slowest ? `* **Slowest component:** \`${latest.slowest.name}\` (${formatMs(latest.slowest.latestDuration)}, reason: \`${latest.slowest.reason ?? 'unknown'}\`)` : '',
-    `* **Thresholds:** Fast <= \`${formatMs(options.fastThresholdMs)}\` | Slow >= \`${formatMs(options.slowThresholdMs)}\``,
+    `* **Thresholds:** Fast <= \`${formatMs(fastThreshold)}\` | Slow >= \`${formatMs(slowThreshold)}\``,
     `* **Filters:** Min duration \`${formatMs(options.minDurationMs)}\`, min render count ${options.minRenderCount}`,
     '',
     '## 📈 Recent cycle history:',
     ...cycles.slice(-8).map(formatPromptCycle),
     '',
     '## 🚨 Slow/error component issues to fix:',
-    ...issueEntries.map((entry, index) => formatIssueEntry(entry, index + 1, latest.duration, options.slowThresholdMs)),
+    ...issueEntries.map((entry, index) => formatIssueEntry(entry, index + 1, latest.duration, slowThreshold)),
     issueEntries.length === 0 ? '- No component exceeded the configured slow threshold in the captured cycles.' : '',
     '',
     '## 📊 Reference metrics (top observed components):',
@@ -224,7 +314,8 @@ function topEntries(cycles: AngularRenderCycle[], limit: number): AngularRenderE
 
 function issueEntriesForPrompt(cycles: AngularRenderCycle[], options = getResolvedOptions()): AngularRenderEntry[] {
   const entries = topEntries(cycles, Math.min(options.maxLabelCount, 8));
-  return entries.filter((entry) => entry.latestDuration >= options.slowThresholdMs);
+  const slowThreshold = options.budgets?.warnMs ?? 10;
+  return entries.filter((entry) => entry.latestDuration >= slowThreshold);
 }
 
 function formatIssueEntry(entry: AngularRenderEntry, index: number, latestCycleDuration: number, slowThresholdMs: number): string {
@@ -274,3 +365,53 @@ function getPromptEnvironment(fps?: number): string[] {
 function formatMs(value: number): string {
   return `${value.toFixed(1)}ms`;
 }
+
+export function getSessionData(): SessionExportData {
+  const options = getResolvedOptions();
+  const wasted = getWastedStats();
+  const leaks = getLeakedComponents().map((c) => c.name);
+
+  const mappedCycles = recentCycles.map((cycle) => ({
+    id: cycle.id,
+    startedAt: cycle.startedAt,
+    finishedAt: cycle.finishedAt,
+    duration: cycle.duration,
+    renderedCount: cycle.renderedCount,
+    entries: cycle.entries.map((e) => ({
+      id: e.id,
+      name: e.name,
+      count: e.count,
+      latestDuration: e.latestDuration,
+      averageDuration: e.averageDuration,
+      latestCycleId: e.latestCycleId,
+      reason: e.reason,
+      changedInputs: e.changedInputs,
+      selector: e.selector,
+      wastedChecks: e.wastedChecks,
+      wastedPercentage: e.wastedPercentage,
+      mutationType: e.mutationType
+    })),
+    waterfall: cycle.waterfall
+  }));
+
+  const viewport = typeof window !== 'undefined'
+    ? `${window.innerWidth}x${window.innerHeight} @${window.devicePixelRatio || 1}x`
+    : '';
+  const url = typeof window !== 'undefined' ? window.location.href : '';
+  const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+
+  return {
+    exportedAt: new Date().toISOString(),
+    url,
+    viewport,
+    userAgent,
+    options,
+    cycles: mappedCycles,
+    wastedStats: wasted,
+    budgetViolations: activeSessionBudgetViolations,
+    leakedComponents: leaks
+  };
+}
+
+export { getWastedStats, getLeakedComponents };
+

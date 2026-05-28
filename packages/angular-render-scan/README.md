@@ -25,8 +25,7 @@ bootstrapApplication(AppComponent, {
   providers: [
     provideAngularRenderScan({
       enabled: true,
-      animationSpeed: 'fast',
-      slowThresholdMs: 15
+      animationSpeed: 'fast'
     })
   ]
 });
@@ -67,8 +66,6 @@ provideAngularRenderScan({
   showFPS: true,
   animationSpeed: 'fast',
   log: false,
-  fastThresholdMs: 5,
-  slowThresholdMs: 15,
   maxLabelCount: 20,
   maxRecordedCycles: 30,
   showCopyPrompt: true
@@ -82,7 +79,6 @@ provideAngularRenderScan({
 - `log`: prints cycle summaries to the console.
 - `minDurationMs`, `minRenderCount`, `include`, `exclude`: hide low-signal entries.
 - `maxLabelCount`: caps visible component labels.
-- `fastThresholdMs`, `slowThresholdMs`: tune heatmap thresholds.
 - `maxRecordedCycles`: controls how many recent cycles are included in the copied AI prompt.
 - `showCopyPrompt`, `promptContext`: control the copyable AI performance prompt.
 - `dangerouslyForceRunInProduction`: allows the scanner to run outside Angular dev mode.
@@ -94,8 +90,6 @@ provideAngularRenderScan({
   enabled: true,
   showToolbar: true,
   animationSpeed: 'slow',
-  fastThresholdMs: 5,
-  slowThresholdMs: 15,
   maxLabelCount: 12,
   maxRecordedCycles: 20,
   promptContext: 'Angular app using signals and OnPush components'
@@ -106,7 +100,7 @@ Use `animationSpeed: 'slow'` when you want more time to read the borders and lab
 
 ## AI Performance Prompt
 
-Click `Copy Slow Issues Prompt` in the toolbar, or call `copyAIPrompt()`, to copy a self-contained prompt for an AI coding assistant. It includes environment details, recent cycle history, Angular render-cycle evidence, thresholds, and an issue list for components over `slowThresholdMs`.
+Click `Copy Slow Issues Prompt` in the toolbar, or call `copyAIPrompt()`, to copy a self-contained prompt for an AI coding assistant. It includes environment details, recent cycle history, Angular render-cycle evidence, thresholds, and an issue list for components exceeding the performance warning threshold (10ms by default).
 
 The copied prompt is intentionally focused: it does not copy every render entry. It lists slow components with selector, latest render time, average render time, render count, reason, changed inputs when available, and an estimated cost based on latest duration, cycle share, and observed render count. It does not include raw DOM nodes, component instances, source code, or large object values.
 

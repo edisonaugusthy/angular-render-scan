@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { finishCycle, recordComponentCheck, registerComponent, resetStats, startCycle } from './stats';
+import { finishCycle, recordComponentCheck, registerComponent, resetStats, startCycle, getWastedStats, getLeakedComponents } from './stats';
 import { getResolvedOptions, resetOptionsForTest, setResolvedOptions } from '../domain/options';
 
 describe('stats', () => {
@@ -64,5 +64,31 @@ describe('stats', () => {
     const cycle = finishCycle(cycleId, 10, 20, getResolvedOptions());
 
     expect(cycle.entries.map((entry) => entry.name)).toEqual(['CartComponent']);
+  });
+
+  it('tracks wasted checks and percentage', () => {
+    const element = document.createElement('div');
+    document.body.append(element);
+    registerComponent({ id: 'wasted', name: 'WastedComponent', element });
+    const cycleId = startCycle();
+
+    recordComponentCheck('wasted', 2.0, cycleId, { mutationType: 'none' });
+    recordComponentCheck('wasted', 3.0, cycleId, { mutationType: 'text' });
+    
+    const entry = recordComponentCheck('wasted', 1.0, cycleId, { mutationType: 'none' });
+    expect(entry?.wastedChecks).toBe(2);
+    expect(entry?.wastedPercentage).toBe(67);
+  });
+
+  it('detects memory leaks (disconnected elements)', () => {
+    const element = document.createElement('div');
+    registerComponent({ id: 'leak', name: 'LeakComponent', element });
+    
+    const leaks = getLeakedComponents();
+    expect(leaks.length).toBe(1);
+    expect(leaks[0].name).toBe('LeakComponent');
+
+    document.body.append(element);
+    expect(getLeakedComponents().length).toBe(0);
   });
 });

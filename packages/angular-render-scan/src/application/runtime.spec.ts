@@ -26,7 +26,7 @@ describe('runtime diagnostics', () => {
   });
 
   it('keeps recent cycles and builds a self-contained AI-ready performance prompt', () => {
-    setResolvedOptions({ promptContext: 'Angular signals storefront', slowThresholdMs: 10 });
+    setResolvedOptions({ promptContext: 'Angular signals storefront' });
     const element = document.createElement('app-cart');
     document.body.append(element);
     registerComponent({ id: 'cart', name: 'CartComponent', element, selector: 'app-cart' });

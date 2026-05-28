@@ -2,23 +2,21 @@
 
 Angular Render Scan is a visual debugging overlay for Angular change detection. It is inspired by the React Scan experience: install it, run your app, interact with the UI, and see which Angular components are updating, how often they update, and how long they take.
 
-![Angular Render Scan demo](docs/assets/angular-render-scan-demo.png)
+![Angular Render Scan in Action](docs/assets/angular-render-scan-demo.gif)
 
 ## Features
 
-- Automatic Angular instrumentation through Angular dev-mode profiler hooks where available.
-- Provider-based setup for Angular apps.
-- Floating shadow-DOM toolbar with scan on/off, FPS, latest cycle time, changed component count, and slowest component.
-- Canvas highlights around updated components.
-- Compact component labels with component name, count, and latest duration.
-- Heatmap colors for fast, medium, and slow updates.
-- Optional console reports with `console.table()`.
-- Details mode for hover-to-highlight inspection and pinned component recommendation panels.
-- Draggable toolbar.
-- Noise controls for minimum duration, render count, include/exclude filters, and label caps.
-- Configurable fast/slow performance thresholds.
-- Copy self-contained AI-ready prompts focused on slow/error components, issue context, and estimated cost.
-- Production guard by default.
+- **Automatic Angular Telemetry:** Out-of-the-box zero-setup component auto-instrumentation using Angular dev-mode profiler hooks.
+- **Heatmap & Outlines:** Highlights are colored dynamically based on DOM mutations: **green** for no-op wasted renders, **blue** for text/attribute mutations, and **prominent red borders** for expensive renders exceeding thresholds, making bottlenecks instantly recognizable.
+- **CD Waterfall View:** Click the SVG sparkline in the toolbar to expand a nested horizontal bar breakdown of component check execution stack offsets and children offsets.
+- **Non-Intrusive Budget Alerts Feed:** Standardized budget violations (warning/error millisecond limits and rate alerts) are elegantly grouped and logged in a collapsible alerts feed panel, handling concurrent violations cleanly.
+- **Live CPU & Main-Thread Telemetry:** Dotted CPU metric toggles a live popup showing detailed frame-lag latency and total main-thread blocking times.
+- **Memory Leak Detector Badge:** Automatically tracks zombie components whose DOM elements were disconnected but not properly destroyed.
+- **Click-to-Source IDE Integration:** Inspected details panel provides an "Open in Editor" link that deep links directly to Cursor, VS Code or WebStorm, and automatically copies the class query to your clipboard for instant search.
+- **Session Export JSON:** Download a full profiling JSON bundle including CPU, cycle timelines, wasted statistics, and active budget violation logs.
+- **Dark Mode & Theme Presets:** Sleek dark mode styles that match `prefers-color-scheme`, customizable dynamically via options.
+- **Keyboard Shortcuts:** Keyboard hotkeys mapped to toggle scan, details panel, copy prompts, and clear stats instantly.
+- **Production Guard:** Automatic safety guard shutting down package overhead entirely outside developer mode.
 
 ## Install
 
@@ -41,8 +39,7 @@ bootstrapApplication(AppComponent, {
   providers: [
     provideAngularRenderScan({
       enabled: true,
-      animationSpeed: 'fast',
-      slowThresholdMs: 15
+      animationSpeed: 'fast'
     })
   ]
 });
@@ -135,15 +132,16 @@ interface AngularRenderScanOptions {
   include?: Array<string | RegExp>;
   exclude?: Array<string | RegExp>;
   maxLabelCount?: number;
-  fastThresholdMs?: number;
-  slowThresholdMs?: number;
   maxRecordedCycles?: number;
   showCopyPrompt?: boolean;
   promptContext?: string;
   theme?: Partial<AngularRenderScanTheme>;
+  editorProtocol?: 'vscode' | 'webstorm' | 'cursor' | string;
+  darkMode?: 'auto' | 'dark' | 'light';
   onCycleStart?: () => void;
   onRender?: (entry: AngularRenderEntry) => void;
   onCycleFinish?: (cycle: AngularRenderCycle) => void;
+  onBudgetViolation?: (violation: BudgetViolation) => void;
 }
 ```
 
@@ -155,8 +153,6 @@ provideAngularRenderScan({
   showToolbar: true,
   showFPS: true,
   animationSpeed: 'fast',
-  fastThresholdMs: 5,
-  slowThresholdMs: 15,
   maxLabelCount: 20,
   maxRecordedCycles: 30,
   showCopyPrompt: true,
@@ -172,7 +168,6 @@ provideAngularRenderScan({
 - `dangerouslyForceRunInProduction`: allows the scanner to run outside Angular dev mode.
 - `minDurationMs`, `minRenderCount`, `include`, `exclude`: filter low-signal render entries.
 - `maxLabelCount`: limits how many highlighted components receive labels.
-- `fastThresholdMs`, `slowThresholdMs`: tune heatmap thresholds.
 - `maxRecordedCycles`: controls how many recent cycles are included in the copied AI prompt.
 - `showCopyPrompt`, `promptContext`: control the copyable AI performance prompt.
 
@@ -183,8 +178,6 @@ provideAngularRenderScan({
   enabled: true,
   showToolbar: true,
   animationSpeed: 'slow',
-  fastThresholdMs: 5,
-  slowThresholdMs: 15,
   maxLabelCount: 12,
   maxRecordedCycles: 20,
   promptContext: 'Angular app using signals and OnPush components'
@@ -289,7 +282,7 @@ The recommendation panel shows severity, latest duration, average duration, rend
 
 ## AI Performance Prompt
 
-Use `Copy Slow Issues Prompt` in the toolbar, or call `getAIPrompt()` / `copyAIPrompt()`, to generate a self-contained prompt for an AI coding assistant. The prompt includes environment details, recent cycle history, the latest cycle, configured thresholds, and an issue list for components over `slowThresholdMs`.
+Use `Copy Slow Issues Prompt` in the toolbar, or call `getAIPrompt()` / `copyAIPrompt()`, to generate a self-contained prompt for an AI coding assistant. The prompt includes environment details, recent cycle history, the latest cycle, configured thresholds, and an issue list for components exceeding the performance warning threshold (10ms by default).
 
 The copied prompt is intentionally focused: it does not copy every render entry. It lists slow components with selector, latest render time, average render time, render count, reason, changed inputs when available, and an estimated cost based on latest duration, cycle share, and observed render count. It does not include raw DOM nodes, component instances, or source code.
 
@@ -297,6 +290,57 @@ The copied prompt is intentionally focused: it does not copy every render entry.
 provideAngularRenderScan({
   promptContext: 'Angular 18 app using signals and OnPush components',
   maxRecordedCycles: 20
+});
+```
+
+## Keyboard Shortcuts
+
+The visual overlay responds to the following keyboard shortcuts when enabled:
+
+| Shortcut | Description |
+|---|---|
+| `Alt+Shift+S` | Toggles the active/enabled state of the scanner. |
+| `Alt+Shift+D` | Toggles Details Mode (hover inspect and recommendations). |
+| `Alt+Shift+C` | Copies the AI performance diagnostic prompt. |
+| `Alt+Shift+X` | Clears all telemetry counts and history. |
+| `Alt+Shift+T` | Toggles the floating toolbar visibility. |
+| `Escape` | Closes any pinned recommendation, CPU breakdown, or CD waterfall panel. |
+
+## Playwright Headless Audit API
+
+You can programmatically verify Angular performance inside Playwright end-to-end tests using the headless audit API.
+
+```ts
+import { test, expect } from '@playwright/test';
+import { startRenderAudit } from 'angular-render-scan';
+
+test('verify no performance regressions or wasted checks', async ({ page }) => {
+  await page.goto('/');
+
+  // Start the audit session
+  const audit = await startRenderAudit(page);
+
+  // Interact with the page
+  await page.click('button.expensive-operation');
+
+  // Stop the audit session and fetch the telemetry report
+  const report = await audit.stop();
+
+  // Validate rendering frequency
+  const cardRenders = await report.rendersFor('ProductCardComponent');
+  expect(cardRenders).toBeLessThanOrEqual(2);
+
+  // Validate render duration (ms)
+  const maxDuration = await report.maxDurationFor('ProductCardComponent');
+  expect(maxDuration).toBeLessThan(16.7); // smooth 60fps check
+
+  // Validate overall no-op waste ratio
+  const wasteRatio = await report.wastedRenderPercentage();
+  expect(wasteRatio).toBeLessThan(20); // max 20% wasted checks
+
+  // Validate budget violations
+  const violations = await report.budgetViolations();
+  expect(violations.length).toBe(0);
 });
 ```
 

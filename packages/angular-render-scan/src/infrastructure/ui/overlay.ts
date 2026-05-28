@@ -1,7 +1,7 @@
 import { FpsMeter } from './fps';
 import { CpuMeter } from './cpu';
-import { clearRecording, copyAIPrompt, getRecording } from '../../application/runtime';
-import type { AngularRenderCycle, AngularRenderEntry, AngularRenderScanResolvedOptions } from '../../domain/entities';
+import { clearRecording, copyAIPrompt, getRecording, getSessionData, getWastedStats, getLeakedComponents } from '../../application/runtime';
+import type { AngularRenderCycle, AngularRenderEntry, AngularRenderScanResolvedOptions, BudgetViolation } from '../../domain/entities';
 
 interface ActiveHighlight {
   entry: AngularRenderEntry;
@@ -10,7 +10,31 @@ interface ActiveHighlight {
 }
 
 const TOOLBAR_CSS = `
-  :host { all: initial; }
+  :host {
+    all: initial;
+    display: block;
+    position: fixed;
+    z-index: 2147483647;
+    pointer-events: none;
+    --ars-bg: rgba(255, 255, 255, 0.85);
+    --ars-border: rgba(15, 23, 42, 0.08);
+    --ars-color: #0f172a;
+    --ars-label: #64748b;
+    --ars-panel-bg: rgba(255, 255, 255, 0.96);
+    --ars-card-bg: #f8fafc;
+    --ars-shadow: 0 1px 3px rgba(0,0,0,0.02), 0 10px 30px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255,255,255,0.6);
+  }
+  
+  :host(.dark) {
+    --ars-bg: rgba(15, 23, 42, 0.85);
+    --ars-border: rgba(255, 255, 255, 0.1);
+    --ars-color: #f8fafc;
+    --ars-label: #94a3b8;
+    --ars-panel-bg: rgba(15, 23, 42, 0.96);
+    --ars-card-bg: #1e293b;
+    --ars-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 10px 30px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+
   .toolbar {
     position: fixed;
     right: 16px;
@@ -20,14 +44,11 @@ const TOOLBAR_CSS = `
     align-items: center;
     gap: 12px;
     padding: 8px 16px;
-    border: 1px solid rgba(15, 23, 42, 0.08);
+    border: 1px solid var(--ars-border);
     border-radius: 12px;
-    background: rgba(255, 255, 255, 0.85);
-    box-shadow: 
-      0 1px 3px rgba(0,0,0,0.02),
-      0 10px 30px rgba(15, 23, 42, 0.08),
-      inset 0 1px 0 rgba(255,255,255,0.6);
-    color: #0f172a;
+    background: var(--ars-bg);
+    box-shadow: var(--ars-shadow);
+    color: var(--ars-color);
     font: 500 11px/1.2 Inter, system-ui, -apple-system, sans-serif;
     pointer-events: auto;
     backdrop-filter: blur(16px);
@@ -37,9 +58,7 @@ const TOOLBAR_CSS = `
   }
   .toolbar:hover {
     border-color: rgba(15, 23, 42, 0.12);
-    box-shadow: 
-      0 2px 6px rgba(0,0,0,0.03),
-      0 16px 40px rgba(15, 23, 42, 0.12);
+    box-shadow: var(--ars-shadow);
   }
   .toolbar:active {
     cursor: grabbing;
@@ -59,19 +78,19 @@ const TOOLBAR_CSS = `
     align-items: center;
     gap: 6px;
     padding: 6px 10px;
-    border: 1px solid rgba(15, 23, 42, 0.08);
+    border: 1px solid var(--ars-border);
     border-radius: 8px;
-    color: #475569;
+    color: var(--ars-label);
     font: inherit;
     font-weight: 600;
-    background: #f8fafc;
+    background: var(--ars-card-bg);
     user-select: none;
     transition: all 0.15s ease;
   }
   .details-toggle:hover {
     background: #f1f5f9;
     border: 1px dotted rgba(15, 23, 42, 0.4);
-    color: #0f172a;
+    color: var(--ars-color);
   }
   .details-toggle input {
     width: 13px;
@@ -116,7 +135,7 @@ const TOOLBAR_CSS = `
     transform: translateX(14px);
   }
   .switch-text {
-    color: #0f172a;
+    color: var(--ars-color);
     font-weight: 700;
   }
   .metric { display: grid; gap: 3px; min-width: 50px; }
@@ -132,8 +151,8 @@ const TOOLBAR_CSS = `
     overflow: hidden;
     white-space: nowrap;
   }
-  .label { color: #64748b; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
-  .value { color: #0f172a; font-family: monospace; font-size: 11px; font-weight: 700; white-space: nowrap; }
+  .label { color: var(--ars-label); font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+  .value { color: var(--ars-color); font-family: monospace; font-size: 11px; font-weight: 700; white-space: nowrap; }
   .value.fps-drop { color: #ef4444; }
   .value.cpu-high { color: #ef4444; }
   .value.cpu-medium { color: #f59e0b; }
@@ -170,27 +189,26 @@ const TOOLBAR_CSS = `
   .cpu-details-panel {
     position: fixed;
     z-index: 2147483647;
+    pointer-events: auto;
     width: 160px;
-    background: rgba(255, 255, 255, 0.95);
-    border: 1px solid rgba(15, 23, 42, 0.08);
+    background: var(--ars-panel-bg);
+    border: 1px solid var(--ars-border);
     border-radius: 10px;
     padding: 10px;
     backdrop-filter: blur(16px);
-    box-shadow: 
-      0 1px 3px rgba(0,0,0,0.02),
-      0 10px 25px rgba(15, 23, 42, 0.08);
+    box-shadow: var(--ars-shadow);
     display: grid;
     gap: 6px;
     font-family: Inter, system-ui, -apple-system, sans-serif;
-    color: #0f172a;
+    color: var(--ars-color);
     transition: all 0.2s ease;
   }
   .cpu-details-panel .title {
     font-size: 9px;
     font-weight: 800;
     text-transform: uppercase;
-    color: #64748b;
-    border-bottom: 1px solid rgba(15, 23, 42, 0.05);
+    color: var(--ars-label);
+    border-bottom: 1px solid var(--ars-border);
     padding-bottom: 4px;
     display: flex;
     justify-content: space-between;
@@ -292,19 +310,19 @@ const TOOLBAR_CSS = `
     transform: translateY(0);
   }
   .clear-btn, .action-btn, .panel-close, .panel-copy-btn {
-    background: #f8fafc;
-    border: 1px solid rgba(15, 23, 42, 0.08);
+    background: var(--ars-card-bg);
+    border: 1px solid var(--ars-border);
     border-radius: 8px;
     padding: 6px 10px;
     font: inherit;
     font-weight: 600;
-    color: #475569;
+    color: var(--ars-label);
     transition: all 0.15s ease;
   }
   .clear-btn:hover, .action-btn:hover, .panel-close:hover, .panel-copy-btn:hover {
     background: #f1f5f9;
     border-color: rgba(15, 23, 42, 0.15);
-    color: #0f172a;
+    color: var(--ars-color);
     transform: translateY(-0.5px);
   }
   .clear-btn:active, .action-btn:active, .panel-close:active, .panel-copy-btn:active {
@@ -352,15 +370,12 @@ const TOOLBAR_CSS = `
     display: grid;
     gap: 8px;
     padding: 12px;
-    border: 1px solid rgba(15, 23, 42, 0.08);
+    border: 1px solid var(--ars-border);
     border-top: 4px solid #3b82f6;
     border-radius: 12px;
-    background: rgba(255, 255, 255, 0.96);
-    box-shadow: 
-      0 1px 3px rgba(0,0,0,0.02),
-      0 12px 32px rgba(15, 23, 42, 0.1),
-      inset 0 1px 0 rgba(255,255,255,0.6);
-    color: #0f172a;
+    background: var(--ars-panel-bg);
+    box-shadow: var(--ars-shadow);
+    color: var(--ars-color);
     font: 500 11px/1.3 Inter, system-ui, -apple-system, sans-serif;
     pointer-events: auto;
     backdrop-filter: blur(16px);
@@ -374,13 +389,13 @@ const TOOLBAR_CSS = `
     justify-content: space-between;
     align-items: center;
     gap: 8px;
-    border-bottom: 1px solid rgba(15, 23, 42, 0.04);
+    border-bottom: 1px solid var(--ars-border);
     padding-bottom: 6px;
   }
   .panel-title {
     font-size: 12px;
     font-weight: 800;
-    color: #0f172a;
+    color: var(--ars-color);
     overflow-wrap: anywhere;
   }
   .panel-actions {
@@ -422,8 +437,8 @@ const TOOLBAR_CSS = `
     margin: 2px 0;
   }
   .panel-grid .panel-field {
-    background: #f8fafc;
-    border: 1px solid rgba(15, 23, 42, 0.05);
+    background: var(--ars-card-bg);
+    border: 1px solid var(--ars-border);
     border-radius: 6px;
     padding: 4px;
     text-align: center;
@@ -435,31 +450,31 @@ const TOOLBAR_CSS = `
   .panel-grid .panel-label {
     font-size: 8px;
     font-weight: 700;
-    color: #64748b;
+    color: var(--ars-label);
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
   .panel-grid .panel-value {
     font-size: 10px;
     font-weight: 700;
-    color: #0f172a;
+    color: var(--ars-color);
     margin-top: 1px;
   }
   .inspect-panel .panel-field:not(.panel-grid .panel-field) {
-    border-top: 1px solid rgba(15, 23, 42, 0.04);
+    border-top: 1px solid var(--ars-border);
     padding-top: 6px;
     display: grid;
     gap: 2px;
   }
   .inspect-panel .panel-label {
-    color: #64748b;
+    color: var(--ars-label);
     font-size: 9px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
   .inspect-panel .panel-value {
-    color: #0f172a;
+    color: var(--ars-color);
     font-size: 11px;
     line-height: 1.35;
     overflow-wrap: anywhere;
@@ -472,9 +487,9 @@ const TOOLBAR_CSS = `
   .rec-card {
     padding: 6px 10px;
     border-radius: 6px;
-    border: 1px solid rgba(15, 23, 42, 0.05);
+    border: 1px solid var(--ars-border);
     border-left: 3px solid #3b82f6;
-    background: #f8fafc;
+    background: var(--ars-card-bg);
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -508,10 +523,12 @@ const TOOLBAR_CSS = `
   .rec-action {
     font-size: 10px;
     line-height: 1.35;
-    color: #334155;
+    color: var(--ars-color);
     font-weight: 500;
     margin: 0;
   }
+
+
 `;
 
 export class AngularRenderScanOverlay {
@@ -542,8 +559,31 @@ export class AngularRenderScanOverlay {
   private dragStartX = 0;
   private dragStartY = 0;
 
+  private get slowThresholdMs(): number {
+    return this.options.budgets?.warnMs ?? 10;
+  }
+
+  private get fastThresholdMs(): number {
+    return (this.options.budgets?.warnMs ?? 10) / 2;
+  }
+
+  private readonly last30CycleDurations: Array<{ duration: number; isSlow: boolean }> = [];
+  private budgetViolations: BudgetViolation[] = [];
+  private showAlertsPanel = false;
+  private showWaterfallPanel = false;
+  private keyListener?: (e: KeyboardEvent) => void;
+  private budgetViolationListener?: (e: Event) => void;
+
   constructor(options: AngularRenderScanResolvedOptions, private readonly onToggle: (enabled: boolean) => void) {
     this.options = options;
+    const recorded = getRecording();
+    if (recorded && recorded.length > 0) {
+      this.latestCycle = recorded[recorded.length - 1];
+      this.last30CycleDurations.push(...recorded.slice(-30).map(c => ({
+        duration: c.duration,
+        isSlow: c.duration >= this.slowThresholdMs
+      })));
+    }
     this.host.style.pointerEvents = 'none';
     this.canvas.style.cssText = [
       'position:fixed',
@@ -557,6 +597,65 @@ export class AngularRenderScanOverlay {
     window.addEventListener('resize', this.resize);
     this.loop();
     this.setupDragListeners();
+    this.updateDarkMode();
+
+    // Setup budget violation event listener
+    this.budgetViolationListener = (e: any) => {
+      if (e.detail) {
+        this.addBudgetViolation(e.detail);
+      }
+    };
+    window.addEventListener('angular-render-scan:budget-violation', this.budgetViolationListener);
+
+    // Setup keyboard shortcuts
+    this.keyListener = (e: KeyboardEvent) => {
+      if (e.altKey && e.shiftKey) {
+        const key = e.key.toLowerCase();
+        if (key === 's') {
+          e.preventDefault();
+          this.onToggle(!this.options.enabled);
+        } else if (key === 'd') {
+          e.preventDefault();
+          this.detailsMode = !this.detailsMode;
+          this.hoveredEntry = undefined;
+          this.hoveredRect = undefined;
+          if (!this.detailsMode) this.selectedEntry = undefined;
+          this.renderToolbar();
+        } else if (key === 'c') {
+          e.preventDefault();
+          copyAIPrompt(this.latestFps || this.fps.value).then(copied => {
+            this.setCopyStatus(copied ? 'Copied' : 'No render data');
+          });
+        } else if (key === 'x') {
+          e.preventDefault();
+          import('../../application/stats').then(m => {
+            m.clearStats();
+            clearRecording();
+            this.latestCycle = undefined;
+            this.highlights = [];
+            this.selectedEntry = undefined;
+            this.hoveredEntry = undefined;
+            this.hoveredRect = undefined;
+            this.last30CycleDurations.length = 0;
+            this.showWaterfallPanel = false;
+            this.renderToolbar();
+          });
+        } else if (key === 't') {
+          e.preventDefault();
+          this.options.showToolbar = !this.options.showToolbar;
+          this.renderToolbar();
+        }
+      } else if (e.key === 'Escape') {
+        if (this.selectedEntry || this.showCpuDetails || this.showWaterfallPanel || this.showAlertsPanel) {
+          this.selectedEntry = undefined;
+          this.showCpuDetails = false;
+          this.showWaterfallPanel = false;
+          this.showAlertsPanel = false;
+          this.renderToolbar();
+        }
+      }
+    };
+    window.addEventListener('keydown', this.keyListener);
   }
 
   private setupDragListeners(): void {
@@ -662,11 +761,22 @@ export class AngularRenderScanOverlay {
 
   updateOptions(options: AngularRenderScanResolvedOptions): void {
     this.options = options;
+    this.updateDarkMode();
     this.renderToolbar();
   }
 
   showCycle(cycle: AngularRenderCycle): void {
     this.latestCycle = cycle;
+    
+    // Track sparkline durations
+    this.last30CycleDurations.push({
+      duration: cycle.duration,
+      isSlow: cycle.duration >= this.slowThresholdMs
+    });
+    if (this.last30CycleDurations.length > 30) {
+      this.last30CycleDurations.shift();
+    }
+
     const ttl = this.highlightTtl();
     if (ttl > 0 && this.options.enabled) {
       const expiresAt = performance.now() + ttl;
@@ -687,6 +797,12 @@ export class AngularRenderScanOverlay {
     }
     if (this.globalMoveListener) {
       document.removeEventListener('mousemove', this.globalMoveListener, { capture: true });
+    }
+    if (this.keyListener) {
+      window.removeEventListener('keydown', this.keyListener);
+    }
+    if (this.budgetViolationListener) {
+      window.removeEventListener('angular-render-scan:budget-violation', this.budgetViolationListener);
     }
     window.clearTimeout(this.copyStatusTimer);
     this.host.remove();
@@ -730,14 +846,11 @@ export class AngularRenderScanOverlay {
     const activeHighlights = this.getActiveHighlights(now);
     const labelledIds = this.getLabelledEntryIds(activeHighlights).slice(0, this.options.maxLabelCount);
 
-    // Sort activeHighlights so parents are drawn first, then children, ensuring child labels stay on top if overlapping
-    // We already sort by area descending in getActiveHighlights, which is good.
-
     const fadeDuration = this.highlightTtl() || 1;
     for (const { entry, expiresAt, rect } of activeHighlights) {
       const alpha = Math.max(0.18, Math.min(1, (expiresAt - now) / fadeDuration));
       
-      this.drawOutline(rect, alpha, entry.latestDuration);
+      this.drawOutline(rect, alpha, entry);
 
       if (labelledIds.includes(entry.id)) {
         this.drawLabel(entry, rect, alpha, entry.latestDuration);
@@ -745,7 +858,7 @@ export class AngularRenderScanOverlay {
     }
 
     if (this.detailsMode && this.hoveredEntry && this.hoveredRect) {
-      this.drawHoverTarget(this.hoveredRect, this.hoveredEntry.latestDuration);
+      this.drawHoverTarget(this.hoveredRect, this.hoveredEntry);
     }
   }
 
@@ -808,18 +921,39 @@ export class AngularRenderScanOverlay {
 
   private getColorForDuration(duration: number, type: 'stroke' | 'bg'): readonly [number, number, number] {
     const { theme } = this.options;
-    if (duration >= this.options.slowThresholdMs) return type === 'bg' ? theme.labelBackgroundSlow! : theme.slow!;
-    if (duration > this.options.fastThresholdMs) return type === 'bg' ? theme.labelBackground! : theme.medium!;
+    if (duration >= this.slowThresholdMs) return type === 'bg' ? theme.labelBackgroundSlow! : theme.slow!;
+    if (duration > this.fastThresholdMs) return type === 'bg' ? theme.labelBackground! : theme.medium!;
     return type === 'bg' ? theme.labelBackground! : theme.fast!;
   }
 
-  private drawOutline(rect: DOMRect, alpha: number, duration: number): void {
+  private getStrokeColorForMutation(entry: AngularRenderEntry): readonly [number, number, number] {
+    if (entry.element && !entry.element.isConnected) {
+      return this.options.theme.slow; // Red for leaked/disconnected components!
+    }
+    const maxDuration = Math.max(entry.latestDuration, entry.averageDuration);
+    if (maxDuration >= this.slowThresholdMs) {
+      return this.options.theme.slow; // Red for expensive/slow renders!
+    }
+    if (maxDuration > this.fastThresholdMs) {
+      return this.options.theme.medium; // Yellow/Warning for moderately expensive renders!
+    }
+    const type = entry.mutationType || 'none';
+    if (type === 'none') {
+      return [34, 197, 94]; // Green for wasted no-ops!
+    }
+    if (type === 'structural') {
+      return [239, 68, 68]; // Red for structural template/DOM mutations
+    }
+    return [59, 130, 246]; // Blue for text/attribute mutations
+  }
+
+  private drawOutline(rect: DOMRect, alpha: number, entry: AngularRenderEntry): void {
     if (!this.context) {
       return;
     }
 
-    const strokeColor = this.getColorForDuration(duration, 'stroke');
-    const glowColor = strokeColor; // Use the same color for glow but with alpha
+    const strokeColor = this.getStrokeColorForMutation(entry);
+    const glowColor = strokeColor;
 
     this.context.shadowColor = rgba(glowColor, Math.min(0.45, alpha));
     this.context.shadowBlur = 16;
@@ -829,12 +963,12 @@ export class AngularRenderScanOverlay {
     this.context.shadowBlur = 0;
   }
 
-  private drawHoverTarget(rect: DOMRect, duration: number): void {
+  private drawHoverTarget(rect: DOMRect, entry: AngularRenderEntry): void {
     if (!this.context) {
       return;
     }
 
-    const color = this.getColorForDuration(duration, 'stroke');
+    const color = this.getStrokeColorForMutation(entry);
     this.context.save();
     this.context.strokeStyle = rgba(color, 0.95);
     this.context.lineWidth = 3;
@@ -848,7 +982,11 @@ export class AngularRenderScanOverlay {
       return;
     }
 
-    const bgColor = this.getColorForDuration(duration, 'bg');
+    const maxDuration = Math.max(entry.latestDuration, entry.averageDuration);
+    let bgColor = this.getColorForDuration(maxDuration, 'bg');
+    if (entry.element && !entry.element.isConnected) {
+      bgColor = this.options.theme.labelBackgroundSlow!; // Red for leaked component labels
+    }
 
     this.context.fillStyle = rgba(bgColor, Math.min(0.9, alpha + 0.1));
     this.context.font = '600 11px ui-sans-serif, system-ui, sans-serif';
@@ -882,9 +1020,54 @@ export class AngularRenderScanOverlay {
     const cpuVal = this.cpu.value;
     const cpuClass = cpuVal > 50 ? 'cpu-high' : cpuVal > 20 ? 'cpu-medium' : '';
 
+    const wasted = getWastedStats();
+    const leaks = getLeakedComponents();
+
+    // Generate timeline sparkline SVG
+    let sparklineSvg = '';
+    if (this.last30CycleDurations.length > 0) {
+      const maxDuration = Math.max(...this.last30CycleDurations.map((d) => d.duration), 1);
+      const bars = this.last30CycleDurations.map((d, index) => {
+        const height = Math.max(2, Math.round((d.duration / maxDuration) * 16));
+        const y = 16 - height;
+        const x = index * 3;
+        const color = d.duration >= this.slowThresholdMs ? '#ef4444' : d.duration > this.fastThresholdMs ? '#f59e0b' : '#3b82f6';
+        return `<rect x="${x}" y="${y}" width="2" height="${height}" fill="${color}" rx="0.5" />`;
+      }).join('');
+      sparklineSvg = `
+        <span class="metric sparkline-toggle" style="min-width: 90px; cursor: pointer;" data-tooltip="Render timeline sparkline (last 30 cycles). Click to toggle CD waterfall view.">
+          <span class="label">Timeline</span>
+          <svg width="90" height="16" style="display: block; margin-top: 2px;">${bars}</svg>
+        </span>
+      `;
+    } else {
+      sparklineSvg = `<span class="metric"><span class="label">Timeline</span><span class="value">-</span></span>`;
+    }
+
+    // Leaks metric chip
+    const leaksChip = leaks.length > 0
+      ? `<span class="metric leak-toggle" style="cursor: pointer;" data-tooltip="Memory Leak Warning: detected ${leaks.length} components whose elements were disconnected but not destroyed. Click to inspect first leak.">
+          <span class="label" style="color: #ef4444;">Leaks</span>
+          <span class="value" style="color: #ef4444; font-weight: bold; text-decoration: underline;">${leaks.length}</span>
+        </span>`
+      : '';
+
+    // Alerts metric chip
+    const hasError = this.budgetViolations.some((v) => v.type === 'error' || v.type === 'render-rate');
+    const alertsChip = this.budgetViolations.length > 0
+      ? `<span class="metric alerts-toggle ${this.showAlertsPanel ? 'active' : ''}" style="cursor: pointer; position: relative;" data-tooltip="Performance Budget Violations: detected ${this.budgetViolations.length} violations. Click to toggle alerts feed.">
+          <span class="label" style="color: ${hasError ? '#ef4444' : '#f59e0b'}; font-weight: bold;">Alerts</span>
+          <span class="value" style="color: ${hasError ? '#ef4444' : '#f59e0b'}; font-weight: bold; text-decoration: underline;">
+            ⚠️ ${this.budgetViolations.length}
+          </span>
+        </span>`
+      : '';
+
     const htmlChanged = this.replaceToolbarHtml(container, `
       ${this.inspectPanelHtml()}
       ${this.cpuDetailsHtml()}
+      ${this.waterfallPanelHtml()}
+      ${this.alertsPanelHtml()}
       <div class="toolbar" style="right: ${this.toolbarX}px; bottom: ${this.toolbarY}px;">
         <label class="switch">
           <input type="checkbox" ${this.options.enabled ? 'checked' : ''} aria-label="Angular Render Scan enabled" />
@@ -896,16 +1079,19 @@ export class AngularRenderScanOverlay {
           <span class="label">CPU</span>
           <span class="value ${cpuClass}">${cpuVal}%</span>
         </span>
+        ${sparklineSvg}
         ${this.metric('Cycle', cycle ? `${cycle.duration.toFixed(1)}ms` : '-')}
-        ${this.metric('Count', cycle ? String(cycle.renderedCount) : '0')}
+        ${this.metric('Wasted', `${wasted.wastedChecks} (${wasted.wastedPercentage}%)`, wasted.wastedChecks > 0 ? 'cpu-medium' : '')}
+        ${leaksChip}
+        ${alertsChip}
         ${this.metric('Slowest', cycle?.slowest ? cycle.slowest.name : '-', '', 'slowest-metric')}
         <span class="toolbar-actions">
-          <!-- Recording and export controls are intentionally hidden; the slow-issues prompt carries the needed context. -->
           <label class="details-toggle ${this.detailsMode ? 'active' : ''}" data-tooltip="Check Details, hover a captured component to highlight it, then click to pin its recommendation panel. Uncheck to clear the panel.">
             <input class="details-checkbox" type="checkbox" ${this.detailsMode ? 'checked' : ''} aria-label="Enable component details panel" />
             <span>Details</span>
           </label>
           ${this.options.showCopyPrompt ? '<button class="action-btn copy-prompt-btn" aria-label="Copy prompt for slow render issues" data-tooltip="Copy an AI-ready prompt with only the captured slow/error component issues and their runtime evidence.">Copy AI Fix Prompt</button>' : ''}
+          <button class="action-btn export-btn" aria-label="Export session data" data-tooltip="Download the current profiling session data as a .json file.">Export</button>
           <button class="clear-btn" aria-label="Clear stats">Clear</button>
         </span>
         ${this.copyStatus ? `<span class="status" aria-live="polite">${escapeHtml(this.copyStatus)}</span>` : ''}
@@ -926,6 +1112,24 @@ export class AngularRenderScanOverlay {
       this.showCpuDetails = !this.showCpuDetails;
       this.renderToolbar();
     }, { once: true });
+
+    toolbarEl?.querySelector('.sparkline-toggle')?.addEventListener('click', () => {
+      this.showWaterfallPanel = !this.showWaterfallPanel;
+      this.renderToolbar();
+    }, { once: true });
+
+    toolbarEl?.querySelector('.alerts-toggle')?.addEventListener('click', () => {
+      this.showAlertsPanel = !this.showAlertsPanel;
+      this.renderToolbar();
+    }, { once: true });
+
+    toolbarEl?.querySelector('.leak-toggle')?.addEventListener('click', () => {
+      this.detailsMode = true;
+      if (leaks.length > 0) {
+        this.selectedEntry = leaks[0];
+      }
+      this.renderToolbar();
+    }, { once: true });
     
     toolbarEl?.querySelector('.clear-btn')?.addEventListener('click', () => {
       import('../../application/stats').then(m => {
@@ -936,6 +1140,11 @@ export class AngularRenderScanOverlay {
         this.selectedEntry = undefined;
         this.hoveredEntry = undefined;
         this.hoveredRect = undefined;
+        this.last30CycleDurations.length = 0;
+        this.showWaterfallPanel = false;
+        this.showCpuDetails = false;
+        this.showAlertsPanel = false;
+        this.budgetViolations = [];
         this.renderToolbar();
       });
     }, { once: true });
@@ -955,8 +1164,25 @@ export class AngularRenderScanOverlay {
       this.setCopyStatus(copied ? 'Copied' : this.latestCycle ? 'Copy failed' : 'No render data');
     }, { once: true });
 
+    toolbarEl?.querySelector('.export-btn')?.addEventListener('click', () => {
+      const data = getSessionData();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `angular-render-scan-session-${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      this.setCopyStatus('Exported JSON');
+    }, { once: true });
+
     container.querySelector('.panel-close')?.addEventListener('click', () => {
       this.selectedEntry = undefined;
+      this.renderToolbar();
+    }, { once: true });
+
+    container.querySelector('.waterfall-close-btn')?.addEventListener('click', () => {
+      this.showWaterfallPanel = false;
       this.renderToolbar();
     }, { once: true });
 
@@ -966,6 +1192,41 @@ export class AngularRenderScanOverlay {
       }
       const copied = await this.copyComponentPrompt(this.selectedEntry, this.latestFps || this.fps.value);
       this.setCopyStatus(copied ? 'Copied' : 'Copy failed');
+    }, { once: true });
+
+    container.querySelector('.open-editor-btn')?.addEventListener('click', async () => {
+      if (!this.selectedEntry) {
+        return;
+      }
+      const entry = this.selectedEntry;
+      const query = `class ${entry.name}`;
+      
+      try {
+        await navigator.clipboard.writeText(query);
+      } catch (err) {
+        console.warn('[angular-render-scan] Clipboard copy failed', err);
+      }
+
+      const openInEditorUrl = this.getEditorUrl(entry);
+      if (openInEditorUrl) {
+        const w = window.open(openInEditorUrl, '_blank');
+        if (w) {
+          setTimeout(() => w.close(), 500);
+        }
+      }
+
+      this.setCopyStatus('Copied class search query!');
+    }, { once: true });
+
+    container.querySelector('.alerts-close-btn')?.addEventListener('click', () => {
+      this.showAlertsPanel = false;
+      this.renderToolbar();
+    }, { once: true });
+
+    container.querySelector('.clear-alerts-btn')?.addEventListener('click', () => {
+      this.budgetViolations = [];
+      this.showAlertsPanel = false;
+      this.renderToolbar();
     }, { once: true });
   }
 
@@ -1002,7 +1263,7 @@ export class AngularRenderScanOverlay {
       .filter((cycle) => cycle.entries.some((candidate) => candidate.id === entry.id))
       .slice(-5)
       .map((cycle) => `#${cycle.id} ${cycle.entries.find((candidate) => candidate.id === entry.id)?.latestDuration.toFixed(1)}ms`);
-    const isSlow = entry.latestDuration >= this.options.slowThresholdMs;
+    const isSlow = entry.latestDuration >= this.slowThresholdMs;
     const severity = this.severityFor(entry);
     const cost = this.costFor(entry);
     const recommendations = this.recommendationsFor(entry);
@@ -1010,12 +1271,29 @@ export class AngularRenderScanOverlay {
       ? entry.changedInputs.map((input) => `${escapeHtml(input.name)}: ${escapeHtml(input.previous)} -> ${escapeHtml(input.current)}`).join('<br>')
       : '-';
 
+    const openInEditorUrl = this.getEditorUrl(entry);
+    const openLinkHtml = openInEditorUrl
+      ? `<button class="open-editor-btn" style="background: none; border: none; padding: 0; cursor: pointer; color: #2563eb; text-decoration: none; font-size: 10px; font-weight: 700; margin-top: 4px; display: inline-flex; align-items: center; gap: 4px; font-family: inherit;">
+           <span>Open in Editor</span>
+           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+         </button>`
+      : '';
+
+    const leakWarningHtml = !entry.element?.isConnected
+      ? `<div style="background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; border-radius: 6px; padding: 6px 10px; color: #ef4444; font-weight: bold; font-size: 10px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+          <span style="font-size: 14px;">⚠️</span>
+          <span>Memory Leak Warning: Element is disconnected from the DOM but was not destroyed!</span>
+         </div>`
+      : '';
+
     return `
       <section class="inspect-panel ${severity.kind}" style="right: ${this.toolbarX}px; bottom: ${this.toolbarY + 60}px;" aria-label="Component recommendation panel">
+        ${leakWarningHtml}
         <div class="panel-head">
           <div>
             <div class="panel-title">${escapeHtml(entry.name)}</div>
-            <span class="severity ${severity.kind}">${escapeHtml(severity.label)}</span>
+            ${openLinkHtml}
+            <div><span class="severity ${severity.kind}">${escapeHtml(severity.label)}</span></div>
           </div>
           <div class="panel-actions">
             ${isSlow ? '<button class="panel-copy-btn" aria-label="Copy prompt for this slow component issue" data-tooltip="Copy an AI-ready prompt scoped only to this slow component and its local evidence.">Copy AI Fix Prompt</button>' : ''}
@@ -1029,6 +1307,19 @@ export class AngularRenderScanOverlay {
           ${this.panelField('Reason', entry.reason ?? 'unknown')}
           ${this.panelField('Selector', entry.selector ?? '-')}
           ${this.panelField('Cycle', `#${entry.latestCycleId}`)}
+        </div>
+        <div class="panel-field">
+          <span class="panel-label">Wasted Renders</span>
+          <span class="panel-value">
+            ${entry.wastedChecks} of ${entry.count} checks were no-ops (${entry.wastedPercentage}% wasted)
+            <div style="width: 100%; height: 4px; background: #e2e8f0; border-radius: 2px; overflow: hidden; margin-top: 4px;">
+              <div style="width: ${entry.wastedPercentage}%; height: 100%; background: #10b981;"></div>
+            </div>
+          </span>
+        </div>
+        <div class="panel-field">
+          <span class="panel-label">DOM Mutation Type</span>
+          <span class="panel-value" style="text-transform: capitalize;">${escapeHtml(entry.mutationType ?? 'none')}</span>
         </div>
         <div class="panel-field">
           <span class="panel-label">Estimated cost</span>
@@ -1069,7 +1360,7 @@ export class AngularRenderScanOverlay {
     const fillClass = details.percentage > 50 ? 'high' : details.percentage > 20 ? 'medium' : 'low';
     
     return `
-      <div class="cpu-details-panel" style="right: ${this.toolbarX + 180}px; bottom: ${this.toolbarY + 45}px;" aria-label="CPU details breakdown">
+      <div class="cpu-details-panel" style="right: ${this.toolbarX + 120}px; bottom: ${this.toolbarY + 60}px;" aria-label="CPU details breakdown">
         <div class="title">
           <span>CPU Usage</span>
           <span style="font-size: 8px; font-weight: normal; color: #94a3b8;">Main Thread</span>
@@ -1112,10 +1403,14 @@ export class AngularRenderScanOverlay {
   }
 
   private severityFor(entry: AngularRenderEntry): { kind: 'slow' | 'medium' | 'fast'; label: string } {
-    if (entry.latestDuration >= this.options.slowThresholdMs) {
+    if (entry.element && !entry.element.isConnected) {
+      return { kind: 'slow', label: 'Memory Leak' };
+    }
+    const maxDuration = Math.max(entry.latestDuration, entry.averageDuration);
+    if (maxDuration >= this.slowThresholdMs) {
       return { kind: 'slow', label: 'Slow issue' };
     }
-    if (entry.latestDuration > this.options.fastThresholdMs) {
+    if (maxDuration > this.fastThresholdMs) {
       return { kind: 'medium', label: 'Watch' };
     }
     return { kind: 'fast', label: 'Healthy' };
@@ -1130,10 +1425,20 @@ export class AngularRenderScanOverlay {
 
   private recommendationsFor(entry: AngularRenderEntry): Array<{ category: string; action: string; severity: 'slow' | 'medium' | 'fast' }> {
     const recommendations: Array<{ category: string; action: string; severity: 'slow' | 'medium' | 'fast' }> = [];
-    if (entry.latestDuration >= this.options.slowThresholdMs) {
+    
+    if (entry.element && !entry.element.isConnected) {
+      recommendations.push({
+        category: 'Memory Leak',
+        action: `Component element is disconnected from the DOM but was not destroyed. Make sure subscriptions and global events are cleanly unsubscribed (e.g. takeUntilDestroyed).`,
+        severity: 'slow'
+      });
+    }
+
+    const maxDuration = Math.max(entry.latestDuration, entry.averageDuration);
+    if (maxDuration >= this.slowThresholdMs) {
       recommendations.push({
         category: 'Threshold Spike',
-        action: `Exceeded the slow threshold by ${(entry.latestDuration - this.options.slowThresholdMs).toFixed(1)}ms. Audit template calculations, expensive computed values, or blocking synchronous logic in this component.`,
+        action: `Exceeded the slow threshold (max: ${maxDuration.toFixed(1)}ms). Audit template calculations, expensive computed values, or blocking synchronous logic in this component.`,
         severity: 'slow'
       });
     }
@@ -1211,7 +1516,7 @@ export class AngularRenderScanOverlay {
       `* **Latest render duration:** \`${entry.latestDuration.toFixed(1)}ms\``,
       `* **Average render duration:** \`${entry.averageDuration.toFixed(1)}ms\``,
       `* **Total captured renders:** ${entry.count}`,
-      `* **Configured Thresholds:** Fast <= \`${this.options.fastThresholdMs.toFixed(1)}ms\` | Slow >= \`${this.options.slowThresholdMs.toFixed(1)}ms\``,
+      `* **Configured Thresholds:** Fast <= \`${this.fastThresholdMs.toFixed(1)}ms\` | Slow >= \`${this.slowThresholdMs.toFixed(1)}ms\``,
       `* **Estimated cost:** ${this.costFor(entry)}`,
       typeof fps === 'number' && Number.isFinite(fps) ? `* **FPS during performance spike:** \`${fps} FPS\`` : '',
       '',
@@ -1244,6 +1549,145 @@ export class AngularRenderScanOverlay {
       '',
       'Please return highly descriptive explanations along with complete TypeScript and HTML code blocks illustrating the **Before (Current)** and **After (Optimized)** states of the component. Make all refactored code clean, robust, and ready for production!'
     ].filter(Boolean).join('\n');
+  }
+
+  private getEditorUrl(entry: AngularRenderEntry): string {
+    const protocol = this.options.editorProtocol || 'vscode';
+    const query = encodeURIComponent(`class ${entry.name}`);
+    if (protocol === 'vscode') {
+      return `vscode://vscode.code-search/search?query=${query}`;
+    }
+    if (protocol === 'cursor') {
+      return `cursor://vscode.code-search/search?query=${query}`;
+    }
+    if (protocol === 'webstorm') {
+      return `webstorm://search?query=${query}`;
+    }
+    return `${protocol}://search?query=${query}`;
+  }
+
+  private addBudgetViolation(violation: BudgetViolation): void {
+    if (this.budgetViolations.some(v => v.componentName === violation.componentName && v.timestamp === violation.timestamp && v.type === violation.type)) {
+      return;
+    }
+    this.budgetViolations.push(violation);
+    if (this.budgetViolations.length > 50) {
+      this.budgetViolations.shift();
+    }
+    this.renderToolbar();
+  }
+
+  private updateDarkMode(): void {
+    const mode = this.options.darkMode;
+    let isDark = false;
+    if (mode === 'dark') {
+      isDark = true;
+    } else if (mode === 'light') {
+      isDark = false;
+    } else {
+      isDark = typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+    }
+    if (isDark) {
+      this.host.classList.add('dark');
+    } else {
+      this.host.classList.remove('dark');
+    }
+  }
+
+  private waterfallPanelHtml(): string {
+    if (!this.showWaterfallPanel || !this.latestCycle) return '';
+    const cycle = this.latestCycle;
+    const waterfall = cycle.waterfall || [];
+    const rightOffset = this.showCpuDetails ? (this.toolbarX + 290) : (this.toolbarX + 120);
+    if (waterfall.length === 0) {
+      return `
+        <div class="waterfall-panel" style="position: fixed; right: ${rightOffset}px; bottom: ${this.toolbarY + 60}px; width: 300px; background: var(--ars-panel-bg); border: 1px solid var(--ars-border); border-radius: 12px; padding: 12px; z-index: 2147483647; box-shadow: var(--ars-shadow); pointer-events: auto;">
+          <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--ars-label); border-bottom: 1px solid var(--ars-border); padding-bottom: 6px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+            <span>CD Waterfall</span>
+            <button class="waterfall-close-btn" style="background: none; border: none; color: var(--ars-label); cursor: pointer; font-size: 12px;">×</button>
+          </div>
+          <div style="font-size: 10px; color: var(--ars-label); padding: 12px; text-align: center;">No waterfall data for this cycle</div>
+        </div>
+      `;
+    }
+    
+    const maxOffset = Math.max(...waterfall.map(w => w.startOffset + w.totalDuration), 1);
+    const items = waterfall.map(w => {
+      const leftPct = (w.startOffset / maxOffset) * 100;
+      const widthPct = Math.max(2, (w.totalDuration / maxOffset) * 100);
+      const indent = w.depth * 8;
+      const color = w.selfDuration >= this.slowThresholdMs ? '#ef4444' : w.selfDuration > this.fastThresholdMs ? '#f59e0b' : '#3b82f6';
+      return `
+        <div style="display: flex; align-items: center; justify-content: space-between; font-size: 9px; margin-bottom: 4px;">
+          <span style="display: block; width: 100px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; padding-left: ${indent}px; color: var(--ars-color); font-weight: ${w.depth === 1 ? '700' : 'normal'}">
+            ${escapeHtml(w.name)}
+          </span>
+          <div style="flex: 1; height: 8px; background: rgba(0,0,0,0.05); border-radius: 4px; position: relative; margin: 0 8px;">
+            <div style="position: absolute; left: ${leftPct}%; width: ${widthPct}%; height: 100%; background: ${color}; border-radius: 4px;" title="Total: ${w.totalDuration.toFixed(1)}ms (Self: ${w.selfDuration.toFixed(1)}ms)"></div>
+          </div>
+          <span style="font-family: monospace; color: var(--ars-label); min-width: 36px; text-align: right;">${w.selfDuration.toFixed(1)}ms</span>
+        </div>
+      `;
+    }).join('');
+    
+    return `
+      <div class="waterfall-panel" style="position: fixed; right: ${rightOffset}px; bottom: ${this.toolbarY + 60}px; width: 300px; max-height: 240px; overflow-y: auto; background: var(--ars-panel-bg); border: 1px solid var(--ars-border); border-radius: 12px; padding: 12px; z-index: 2147483647; box-shadow: var(--ars-shadow); pointer-events: auto;">
+        <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--ars-label); border-bottom: 1px solid var(--ars-border); padding-bottom: 6px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+          <span>Waterfall (Cycle #${cycle.id})</span>
+          <button class="waterfall-close-btn" style="background: none; border: none; color: var(--ars-label); cursor: pointer; font-size: 12px;">×</button>
+        </div>
+        <div style="display: flex; flex-direction: column;">
+          ${items}
+        </div>
+      </div>
+    `;
+  }
+
+  private alertsPanelHtml(): string {
+    if (!this.showAlertsPanel || this.budgetViolations.length === 0) return '';
+    
+    const itemsHtml = this.budgetViolations.slice().reverse().map(v => {
+      const typeLabel = v.type === 'error' ? 'ERROR' : v.type === 'render-rate' ? 'RATE' : 'WARN';
+      const typeColor = v.type === 'error' ? '#ef4444' : v.type === 'render-rate' ? '#3b82f6' : '#f59e0b';
+      const timeStr = new Date(v.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      return `
+        <div style="padding: 8px; border-radius: 6px; border: 1px solid var(--ars-border); background: var(--ars-card-bg); display: flex; flex-direction: column; gap: 4px; font-size: 10px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-weight: 800; color: ${typeColor}; font-size: 8px; text-transform: uppercase; border: 1px solid ${typeColor}; padding: 1px 4px; border-radius: 4px;">
+              ${typeLabel}
+            </span>
+            <span style="color: var(--ars-label); font-size: 8px;">${timeStr}</span>
+          </div>
+          <div style="font-weight: 700; color: var(--ars-color); overflow-wrap: anywhere;">${escapeHtml(v.componentName)}</div>
+          <div style="color: var(--ars-label); line-height: 1.35;">${escapeHtml(v.message)}</div>
+        </div>
+      `;
+    }).join('');
+
+    let alertsRight = this.toolbarX + 120;
+    if (this.showCpuDetails) {
+      alertsRight += 170;
+    }
+    if (this.showWaterfallPanel) {
+      alertsRight += 310;
+    }
+
+    return `
+      <div class="alerts-panel" style="position: fixed; right: ${alertsRight}px; bottom: ${this.toolbarY + 60}px; width: 280px; max-height: 300px; display: flex; flex-direction: column; gap: 8px; background: var(--ars-panel-bg); border: 1px solid var(--ars-border); border-top: 4px solid #ef4444; border-radius: 12px; padding: 12px; z-index: 2147483647; box-shadow: var(--ars-shadow); pointer-events: auto; backdrop-filter: blur(16px);">
+        <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--ars-color); border-bottom: 1px solid var(--ars-border); padding-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+          <span style="display: inline-flex; align-items: center; gap: 4px;">
+            <span>⚠️ Budget Violations</span>
+          </span>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button class="clear-alerts-btn" style="background: none; border: none; color: #ef4444; font-size: 9px; font-weight: 700; cursor: pointer; text-transform: uppercase; padding: 2px 6px; border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 4px;">Clear All</button>
+            <button class="alerts-close-btn" style="background: none; border: none; color: var(--ars-label); cursor: pointer; font-size: 14px; font-weight: bold; line-height: 1;">×</button>
+          </div>
+        </div>
+        <div class="alerts-list" style="display: flex; flex-direction: column; gap: 6px; overflow-y: auto; flex: 1; padding-right: 2px;">
+          ${itemsHtml}
+        </div>
+      </div>
+    `;
   }
 
 }
