@@ -34,13 +34,10 @@ export class AngularRenderScanMarkDirective implements OnDestroy {
 
   constructor() {
     effect(() => {
-      const name = this.angularRenderScanMark();
-      if (name) {
-        this.name = name;
-        this.register();
-      }
+      const customName = this.angularRenderScanMark();
+      this.name = customName || this.inferName();
+      this.register();
     });
-    this.register();
   }
 
   ngDoCheck(): void {

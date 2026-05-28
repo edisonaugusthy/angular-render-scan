@@ -17,18 +17,28 @@ const TOOLBAR_CSS = `
     z-index: 2147483647;
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    border: 1px solid rgba(15, 23, 42, 0.14);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.94);
-    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.16);
-    color: #111827;
-    font: 500 12px/1.2 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    gap: 12px;
+    padding: 8px 16px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.85);
+    box-shadow: 
+      0 1px 3px rgba(0,0,0,0.02),
+      0 10px 30px rgba(15, 23, 42, 0.08),
+      inset 0 1px 0 rgba(255,255,255,0.6);
+    color: #0f172a;
+    font: 500 11px/1.2 Inter, system-ui, -apple-system, sans-serif;
     pointer-events: auto;
-    backdrop-filter: blur(12px);
+    backdrop-filter: blur(16px);
     cursor: grab;
     user-select: none;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  }
+  .toolbar:hover {
+    border-color: rgba(15, 23, 42, 0.12);
+    box-shadow: 
+      0 2px 6px rgba(0,0,0,0.03),
+      0 16px 40px rgba(15, 23, 42, 0.12);
   }
   .toolbar:active {
     cursor: grabbing;
@@ -39,36 +49,39 @@ const TOOLBAR_CSS = `
   .switch {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
-    min-width: 78px;
+    gap: 8px;
+    min-width: 72px;
     user-select: none;
   }
   .details-toggle {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 4px 8px;
-    border: 1px solid #cbd5e1;
-    border-radius: 4px;
+    padding: 6px 10px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 8px;
     color: #475569;
     font: inherit;
-    font-size: 11px;
+    font-weight: 600;
+    background: #f8fafc;
     user-select: none;
+    transition: all 0.15s ease;
   }
   .details-toggle:hover {
     background: #f1f5f9;
+    border-color: rgba(15, 23, 42, 0.15);
     color: #0f172a;
   }
   .details-toggle input {
     width: 13px;
     height: 13px;
     margin: 0;
-    accent-color: #0891b2;
+    accent-color: #2563eb;
   }
   .details-toggle.active {
-    border-color: #0891b2;
-    color: #0e7490;
-    background: #ecfeff;
+    border-color: rgba(37, 99, 235, 0.2);
+    color: #2563eb;
+    background: rgba(37, 99, 235, 0.05);
   }
   .switch input {
     position: absolute;
@@ -77,37 +90,37 @@ const TOOLBAR_CSS = `
   }
   .track {
     position: relative;
-    width: 34px;
-    height: 20px;
+    width: 32px;
+    height: 18px;
     border-radius: 999px;
-    background: #cbd5e1;
-    transition: background 140ms ease;
+    background: #e2e8f0;
+    transition: background 0.15s ease;
   }
   .track::after {
     content: "";
     position: absolute;
-    top: 3px;
-    left: 3px;
+    top: 2px;
+    left: 2px;
     width: 14px;
     height: 14px;
     border-radius: 999px;
     background: #ffffff;
-    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.25);
-    transition: transform 140ms ease;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.15);
+    transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1);
   }
   input:checked + .track {
-    background: #7c3aed;
+    background: #2563eb;
   }
   input:checked + .track::after {
     transform: translateX(14px);
   }
   .switch-text {
-    color: #111827;
+    color: #0f172a;
     font-weight: 700;
   }
-  .metric { display: grid; gap: 2px; min-width: 54px; }
-  .label { color: #64748b; font-size: 10px; text-transform: uppercase; }
-  .value { color: #111827; white-space: nowrap; }
+  .metric { display: grid; gap: 3px; min-width: 50px; }
+  .label { color: #64748b; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+  .value { color: #0f172a; font-family: monospace; font-size: 11px; font-weight: 700; white-space: nowrap; }
   .toolbar-actions {
     display: flex;
     align-items: center;
@@ -123,14 +136,14 @@ const TOOLBAR_CSS = `
     bottom: calc(100% + 8px);
     z-index: 2147483647;
     width: max-content;
-    max-width: 260px;
+    max-width: 240px;
     transform: translateX(-50%) translateY(4px);
-    padding: 7px 9px;
-    border-radius: 6px;
-    background: #111827;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: #0f172a;
     color: #ffffff;
-    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.22);
-    font: 500 11px/1.35 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    box-shadow: 0 10px 25px rgba(15, 23, 42, 0.12);
+    font: 500 10px/1.35 Inter, system-ui, -apple-system, sans-serif;
     opacity: 0;
     pointer-events: none;
     white-space: normal;
@@ -144,7 +157,7 @@ const TOOLBAR_CSS = `
     z-index: 2147483647;
     transform: translateX(-50%) translateY(4px);
     border: 5px solid transparent;
-    border-top-color: #111827;
+    border-top-color: #0f172a;
     opacity: 0;
     pointer-events: none;
     transition: opacity 120ms ease, transform 120ms ease;
@@ -173,54 +186,68 @@ const TOOLBAR_CSS = `
     transform: translateY(0);
   }
   .clear-btn, .action-btn, .panel-close, .panel-copy-btn {
-    background: none;
-    border: 1px solid #cbd5e1;
-    border-radius: 4px;
-    padding: 4px 8px;
+    background: #f8fafc;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 8px;
+    padding: 6px 10px;
     font: inherit;
-    font-size: 11px;
+    font-weight: 600;
     color: #475569;
-    transition: all 0.2s;
+    transition: all 0.15s ease;
   }
   .clear-btn:hover, .action-btn:hover, .panel-close:hover, .panel-copy-btn:hover {
     background: #f1f5f9;
+    border-color: rgba(15, 23, 42, 0.15);
     color: #0f172a;
+    transform: translateY(-0.5px);
+  }
+  .clear-btn:active, .action-btn:active, .panel-close:active, .panel-copy-btn:active {
+    transform: translateY(0);
   }
   .action-btn.active {
-    border-color: #7c3aed;
-    color: #6d28d9;
-    background: #f5f3ff;
+    border-color: rgba(37, 99, 235, 0.2);
+    color: #2563eb;
+    background: rgba(37, 99, 235, 0.05);
   }
   .status {
-    color: #6d28d9;
+    color: #2563eb;
     font-size: 11px;
+    font-weight: 700;
     min-width: 56px;
   }
   .inspect-panel {
     position: fixed;
     right: 16px;
-    bottom: 76px;
+    bottom: 72px;
     z-index: 2147483647;
-    width: min(360px, calc(100vw - 32px));
+    width: min(340px, calc(100vw - 32px));
     display: grid;
-    gap: 10px;
-    padding: 12px;
-    border: 1px solid rgba(15, 23, 42, 0.14);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.97);
-    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.16);
-    color: #111827;
-    font: 500 12px/1.35 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    gap: 12px;
+    padding: 18px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 
+      0 1px 3px rgba(0,0,0,0.02),
+      0 16px 40px rgba(15, 23, 42, 0.12),
+      inset 0 1px 0 rgba(255,255,255,0.6);
+    color: #0f172a;
+    font: 500 11px/1.4 Inter, system-ui, -apple-system, sans-serif;
     pointer-events: auto;
-    backdrop-filter: blur(12px);
+    backdrop-filter: blur(16px);
   }
   .panel-head {
     display: flex;
     justify-content: space-between;
-    gap: 8px;
+    align-items: flex-start;
+    gap: 12px;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.04);
+    padding-bottom: 10px;
   }
   .panel-title {
+    font-size: 13px;
     font-weight: 800;
+    color: #0f172a;
     overflow-wrap: anywhere;
   }
   .panel-actions {
@@ -232,28 +259,33 @@ const TOOLBAR_CSS = `
   .severity {
     display: inline-flex;
     width: fit-content;
-    padding: 3px 7px;
-    border-radius: 999px;
-    font-size: 10px;
-    font-weight: 800;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-size: 9px;
+    font-weight: 700;
     text-transform: uppercase;
+    letter-spacing: 0.02em;
+    margin-top: 4px;
   }
   .severity.slow {
-    color: #991b1b;
-    background: #fee2e2;
+    color: #e11d48;
+    background: rgba(225, 29, 72, 0.08);
+    border: 1px solid rgba(225, 29, 72, 0.15);
   }
   .severity.medium {
-    color: #92400e;
-    background: #fef3c7;
+    color: #d97706;
+    background: rgba(217, 119, 6, 0.08);
+    border: 1px solid rgba(217, 119, 6, 0.15);
   }
   .severity.fast {
-    color: #075985;
-    background: #e0f2fe;
+    color: #059669;
+    background: rgba(5, 150, 105, 0.08);
+    border: 1px solid rgba(5, 150, 105, 0.15);
   }
   .panel-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
+    gap: 10px;
   }
   .panel-field {
     display: grid;
@@ -261,20 +293,33 @@ const TOOLBAR_CSS = `
   }
   .panel-label {
     color: #64748b;
-    font-size: 10px;
+    font-size: 9px;
+    font-weight: 700;
     text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
   .panel-value {
-    color: #111827;
+    color: #0f172a;
+    font-family: monospace;
+    font-size: 11px;
+    font-weight: 600;
     overflow-wrap: anywhere;
   }
   .panel-list {
     display: grid;
-    gap: 4px;
-    color: #334155;
+    gap: 6px;
+    color: #475569;
   }
   .panel-list div {
+    position: relative;
+    padding-left: 10px;
     overflow-wrap: anywhere;
+  }
+  .panel-list div::before {
+    content: "•";
+    position: absolute;
+    left: 0;
+    color: #3b82f6;
   }
 `;
 
