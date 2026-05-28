@@ -211,7 +211,8 @@ class HeroBannerComponent {
   imports: [
     ProductCardComponent,
     ShoppingCartComponent,
-    RecommendationsComponent
+    RecommendationsComponent,
+    AngularRenderScanMarkDirective
   ],
   template: `
     <main angularRenderScanMark="AppRoot">

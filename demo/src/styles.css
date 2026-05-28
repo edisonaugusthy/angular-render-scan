@@ -334,9 +334,10 @@ main {
 /* Metrics and Logs Visualizer */
 .metrics-visualizer {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   padding: 16px 20px 20px 20px;
   min-height: 0;
+  height: 100%;
 }
 
 .metrics-visualizer .kicker {
@@ -351,6 +352,7 @@ main {
   font-family: var(--font-cyber);
   font-size: 10px;
   overflow-y: auto;
+  overflow-x: hidden;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -362,11 +364,22 @@ main {
   border-left: 2px solid var(--text-muted);
   padding-left: 6px;
   animation: fadeIn 0.3s ease-out;
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
 }
 
 .log-time {
   color: var(--text-muted);
-  margin-right: 4px;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+.log-msg {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  flex: 1 1 auto;
 }
 
 .log-msg.info {

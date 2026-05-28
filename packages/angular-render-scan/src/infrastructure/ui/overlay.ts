@@ -120,6 +120,18 @@ const TOOLBAR_CSS = `
     font-weight: 700;
   }
   .metric { display: grid; gap: 3px; min-width: 50px; }
+  .metric.slowest-metric {
+    width: 120px;
+    min-width: 120px;
+    max-width: 120px;
+  }
+  .slowest-metric .value {
+    display: block;
+    width: 100%;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+  }
   .label { color: #64748b; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
   .value { color: #0f172a; font-family: monospace; font-size: 11px; font-weight: 700; white-space: nowrap; }
   .value.fps-drop { color: #ef4444; }
@@ -304,10 +316,32 @@ const TOOLBAR_CSS = `
     background: rgba(37, 99, 235, 0.05);
   }
   .status {
-    color: #2563eb;
-    font-size: 11px;
+    position: absolute;
+    bottom: calc(100% + 8px);
+    right: 16px;
+    z-index: 2147483647;
+    color: #ffffff;
+    background: #2563eb;
+    font-size: 10px;
     font-weight: 700;
-    margin-left: 4px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    box-shadow: 
+      0 1px 3px rgba(0,0,0,0.02),
+      0 8px 20px rgba(37, 99, 235, 0.15);
+    white-space: nowrap;
+    pointer-events: none;
+    animation: floatUp 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  @keyframes floatUp {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
   .inspect-panel {
     position: fixed;
@@ -864,7 +898,7 @@ export class AngularRenderScanOverlay {
         </span>
         ${this.metric('Cycle', cycle ? `${cycle.duration.toFixed(1)}ms` : '-')}
         ${this.metric('Count', cycle ? String(cycle.renderedCount) : '0')}
-        ${this.metric('Slowest', cycle?.slowest ? cycle.slowest.name : '-')}
+        ${this.metric('Slowest', cycle?.slowest ? cycle.slowest.name : '-', '', 'slowest-metric')}
         <span class="toolbar-actions">
           <!-- Recording and export controls are intentionally hidden; the slow-issues prompt carries the needed context. -->
           <label class="details-toggle ${this.detailsMode ? 'active' : ''}" data-tooltip="Check Details, hover a captured component to highlight it, then click to pin its recommendation panel. Uncheck to clear the panel.">
@@ -935,8 +969,10 @@ export class AngularRenderScanOverlay {
     }, { once: true });
   }
 
-  private metric(label: string, value: string, extraClass = ''): string {
-    return `<span class="metric"><span class="label">${label}</span><span class="value ${extraClass}">${value}</span></span>`;
+  private metric(label: string, value: string, extraClass = '', containerClass = ''): string {
+    const cls = containerClass ? `metric ${containerClass}` : 'metric';
+    const escapedValue = escapeHtml(value);
+    return `<span class="${cls}"><span class="label">${label}</span><span class="value ${extraClass}" title="${escapedValue}">${escapedValue}</span></span>`;
   }
 
   private getFpsClass(fps: number): string {
