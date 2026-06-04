@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Entry point for `npx angular-render-scan`
+// Entry point for `npx angular-render-scan-cli`
 // This thin shim imports the compiled TypeScript and calls run().
 
 import { run } from '../dist/index.js';
