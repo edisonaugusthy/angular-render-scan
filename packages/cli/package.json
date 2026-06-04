@@ -10,9 +10,23 @@
     "angular-render-scan"
   ],
   "license": "MIT",
+  "homepage": "https://github.com/edisonaugusthy/angular-render-scan#readme",
+  "bugs": {
+    "url": "https://github.com/edisonaugusthy/angular-render-scan/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/edisonaugusthy/angular-render-scan.git",
+    "directory": "packages/cli"
+  },
   "type": "module",
   "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build"
+  },
   "bin": {
+    "angular-render-scan-cli": "./bin/cli.js",
     "angular-render-scan": "./bin/cli.js"
   },
   "files": [

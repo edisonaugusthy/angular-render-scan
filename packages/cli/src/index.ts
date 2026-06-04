@@ -1,8 +1,8 @@
 /**
  * angular-render-scan CLI
  *
- * Usage: npx angular-render-scan init
- *        npx angular-render-scan init --force
+ * Usage: npx angular-render-scan-cli init
+ *        npx angular-render-scan-cli init --force
  *
  * Automatically detects your Angular project structure and inserts
  * provideAngularRenderScan() into your bootstrap providers, or adds
@@ -57,34 +57,32 @@ function writeFile(filePath: string, content: string): void {
   fs.writeFileSync(filePath, content, 'utf-8');
 }
 
-function findAngularJson(): string | null {
-  return findUp('angular.json');
+function findWorkspaceConfig(): string | null {
+  return findUp('angular.json') ?? findUp('workspace.json') ?? findUp('nx.json') ?? findUp('project.json');
 }
 
 /**
  * Find the Angular app entry file. Priority:
- * 1. src/main.ts relative to angular.json
- * 2. apps/[name]/src/main.ts (Nx monorepo)
+ * 1. build target main/browser from angular.json, workspace.json, or Nx project.json
+ * 2. src/main.ts relative to workspace/project root
+ * 3. apps/[name]/src/main.ts (Nx monorepo)
  * 3. Any main.ts near the angular.json
  */
-function findMainTs(angularJsonPath: string): string | null {
-  const root = path.dirname(angularJsonPath);
+function findMainTs(workspaceConfigPath: string): string | null {
+  const root = path.dirname(workspaceConfigPath);
+  const configName = path.basename(workspaceConfigPath);
 
-  // Try to parse angular.json for the main file
+  // Try to parse Angular/Nx workspace files for the configured app entrypoint.
   try {
-    const angularJson = JSON.parse(readFile(angularJsonPath));
-    const projects = angularJson.projects ?? {};
-    for (const projKey of Object.keys(projects)) {
-      const proj = projects[projKey];
-      const mainFile =
-        proj?.architect?.build?.options?.main ||
-        proj?.architect?.build?.options?.browser ||
-        proj?.targets?.build?.options?.main ||
-        proj?.targets?.build?.options?.browser;
-      if (mainFile) {
-        const resolved = path.resolve(root, mainFile);
-        if (fs.existsSync(resolved)) return resolved;
-      }
+    const config = JSON.parse(readFile(workspaceConfigPath));
+    const directProject = configName === 'project.json'
+      ? entrypointFromProjectConfig(config, root, root)
+      : null;
+    if (directProject) return directProject;
+
+    for (const project of projectConfigsFromWorkspace(config, root)) {
+      const mainFile = entrypointFromProjectConfig(project.config, root, project.projectRoot);
+      if (mainFile) return mainFile;
     }
   } catch {
     // Ignore parse errors
@@ -94,10 +92,79 @@ function findMainTs(angularJsonPath: string): string | null {
   const candidates = [
     path.join(root, 'src', 'main.ts'),
     path.join(root, 'src', 'main.server.ts'),
-    ...glob(path.join(root, 'apps'), 'main.ts', 3)
+    ...glob(path.join(root, 'apps'), 'main.ts', 4),
+    ...glob(path.join(root, 'packages'), 'main.ts', 4)
   ];
 
   return candidates.find(f => fs.existsSync(f)) ?? null;
+}
+
+type ProjectConfigRef = {
+  config: any;
+  projectRoot: string;
+};
+
+function projectConfigsFromWorkspace(workspaceConfig: any, workspaceRoot: string): ProjectConfigRef[] {
+  const refs: ProjectConfigRef[] = [];
+  const projects = workspaceConfig.projects ?? {};
+
+  for (const [name, value] of Object.entries(projects)) {
+    if (typeof value === 'string') {
+      const projectRoot = path.resolve(workspaceRoot, value);
+      const projectJsonPath = path.join(projectRoot, 'project.json');
+      if (fs.existsSync(projectJsonPath)) {
+        refs.push({ config: JSON.parse(readFile(projectJsonPath)), projectRoot });
+      }
+      continue;
+    }
+
+    if (value && typeof value === 'object') {
+      const projectRoot = path.resolve(workspaceRoot, String((value as any).root ?? ''));
+      refs.push({ config: value, projectRoot });
+    } else {
+      const projectRoot = path.resolve(workspaceRoot, 'apps', name);
+      const projectJsonPath = path.join(projectRoot, 'project.json');
+      if (fs.existsSync(projectJsonPath)) {
+        refs.push({ config: JSON.parse(readFile(projectJsonPath)), projectRoot });
+      }
+    }
+  }
+
+  for (const projectJsonPath of glob(workspaceRoot, 'project.json', 5)) {
+    const projectRoot = path.dirname(projectJsonPath);
+    if (!refs.some(ref => ref.projectRoot === projectRoot)) {
+      refs.push({ config: JSON.parse(readFile(projectJsonPath)), projectRoot });
+    }
+  }
+
+  return refs;
+}
+
+function entrypointFromProjectConfig(project: any, workspaceRoot: string, projectRoot: string): string | null {
+  const targets = project.targets ?? project.architect ?? {};
+  const buildTarget = targets.build ?? targets['build-browser'] ?? targets.application ?? null;
+  const options = buildTarget?.options ?? {};
+  const candidates = [
+    options.main,
+    options.browser,
+    options.server
+  ].filter((candidate): candidate is string => typeof candidate === 'string');
+
+  for (const candidate of candidates) {
+    const resolved = resolveProjectFile(workspaceRoot, projectRoot, candidate);
+    if (fs.existsSync(resolved)) return resolved;
+  }
+
+  return null;
+}
+
+function resolveProjectFile(workspaceRoot: string, projectRoot: string, filePath: string): string {
+  if (path.isAbsolute(filePath)) return filePath;
+
+  const workspaceRelative = path.resolve(workspaceRoot, filePath);
+  if (fs.existsSync(workspaceRelative)) return workspaceRelative;
+
+  return path.resolve(projectRoot, filePath);
 }
 
 function glob(dir: string, filename: string, maxDepth: number): string[] {
@@ -145,11 +212,13 @@ function findAppConfig(mainTsPath: string): string | null {
 /**
  * Find index.html for script-tag fallback.
  */
-function findIndexHtml(angularJsonPath: string): string | null {
-  const root = path.dirname(angularJsonPath);
+function findIndexHtml(workspaceConfigPath: string): string | null {
+  const root = path.dirname(workspaceConfigPath);
   const candidates = [
     path.join(root, 'src', 'index.html'),
-    path.join(root, 'index.html')
+    path.join(root, 'index.html'),
+    ...glob(path.join(root, 'apps'), 'index.html', 4),
+    ...glob(path.join(root, 'packages'), 'index.html', 4)
   ];
   return candidates.find(f => fs.existsSync(f)) ?? null;
 }
@@ -162,6 +231,42 @@ const PROVIDER_CALL = `provideAngularRenderScan()`;
 /** Check if the file already has the provider set up */
 function alreadyPatched(content: string): boolean {
   return content.includes('angular-render-scan') || content.includes('provideAngularRenderScan');
+}
+
+function findMatchingSquareBracket(content: string, openingBracketIndex: number): number {
+  let depth = 0;
+
+  for (let i = openingBracketIndex; i < content.length; i++) {
+    const char = content[i];
+    if (char === '[') depth++;
+    if (char === ']') depth--;
+    if (depth === 0) return i;
+  }
+
+  return -1;
+}
+
+function insertProviderIntoProvidersArray(content: string, providersMatch: RegExpMatchArray): string | null {
+  if (providersMatch.index === undefined) return null;
+
+  const openingBracketIndex = providersMatch.index + providersMatch[0].lastIndexOf('[');
+  const closingBracketIndex = findMatchingSquareBracket(content, openingBracketIndex);
+  if (closingBracketIndex === -1) return null;
+
+  const currentLineStart = content.lastIndexOf('\n', providersMatch.index) + 1;
+  const baseIndent = content.slice(currentLineStart, providersMatch.index).match(/^\s*/)?.[0] ?? '';
+  const providerIndent = `${baseIndent}  `;
+  const inside = content.slice(openingBracketIndex + 1, closingBracketIndex).trim();
+
+  if (!inside) {
+    return content.slice(0, openingBracketIndex + 1) + PROVIDER_CALL + content.slice(closingBracketIndex);
+  }
+
+  return (
+    content.slice(0, openingBracketIndex + 1) +
+    `\n${providerIndent}${PROVIDER_CALL},\n${providerIndent}${inside}\n${baseIndent}` +
+    content.slice(closingBracketIndex)
+  );
 }
 
 /**
@@ -192,23 +297,9 @@ function patchAppConfig(content: string): string | null {
   // Insert into providers array
   // Handles both single-line and multi-line providers arrays
   const providersMatch = patched.match(/providers:\s*\[/);
-  if (!providersMatch || providersMatch.index === undefined) return null;
+  if (!providersMatch) return null;
 
-  const insertIdx = providersMatch.index + providersMatch[0].length;
-
-  // Check if providers array has existing items
-  const afterBracket = patched.slice(insertIdx).trimStart();
-  const isEmpty = afterBracket.startsWith(']');
-
-  if (isEmpty) {
-    // Empty providers: []
-    patched = patched.slice(0, insertIdx) + PROVIDER_CALL + patched.slice(insertIdx);
-  } else {
-    // Has existing providers: [provideRouter(...), ...]
-    patched = patched.slice(0, insertIdx) + '\n    ' + PROVIDER_CALL + ',\n    ' + patched.slice(insertIdx).trimStart();
-  }
-
-  return patched;
+  return insertProviderIntoProvidersArray(patched, providersMatch);
 }
 
 /**
@@ -233,16 +324,7 @@ function patchMainTs(content: string): string | null {
 
   const providersMatch = patched.match(/providers:\s*\[/);
   if (providersMatch && providersMatch.index !== undefined) {
-    const insertIdx = providersMatch.index + providersMatch[0].length;
-    const afterBracket = patched.slice(insertIdx).trimStart();
-    const isEmpty = afterBracket.startsWith(']');
-
-    if (isEmpty) {
-      patched = patched.slice(0, insertIdx) + PROVIDER_CALL + patched.slice(insertIdx);
-    } else {
-      patched = patched.slice(0, insertIdx) + '\n    ' + PROVIDER_CALL + ',\n    ' + patched.slice(insertIdx).trimStart();
-    }
-    return patched;
+    return insertProviderIntoProvidersArray(patched, providersMatch);
   }
 
   // No providers array yet — add one in the config object
@@ -323,15 +405,15 @@ export async function runInit(args: string[]): Promise<void> {
 
   const TOTAL = 4;
 
-  // ── Step 1: Find angular.json ──────────────────────────────────────────────
+  // ── Step 1: Find Angular/Nx workspace config ───────────────────────────────
   step(1, TOTAL, 'Locating Angular workspace…');
-  const angularJsonPath = findAngularJson();
-  if (!angularJsonPath) {
-    err('Could not find angular.json. Are you inside an Angular project?');
+  const workspaceConfigPath = findWorkspaceConfig();
+  if (!workspaceConfigPath) {
+    err('Could not find angular.json, workspace.json, nx.json, or project.json. Are you inside an Angular project?');
     process.exit(1);
   }
-  ok(`Found angular.json at ${c.gray}${path.relative(process.cwd(), angularJsonPath)}${c.reset}`);
-  const projectRoot = path.dirname(angularJsonPath);
+  ok(`Found ${path.basename(workspaceConfigPath)} at ${c.gray}${path.relative(process.cwd(), workspaceConfigPath)}${c.reset}`);
+  const projectRoot = path.dirname(workspaceConfigPath);
 
   // ── Step 2: Check/install package ─────────────────────────────────────────
   step(2, TOTAL, 'Checking package installation…');
@@ -347,7 +429,7 @@ export async function runInit(args: string[]): Promise<void> {
 
   // ── Step 3: Locate source files ────────────────────────────────────────────
   step(3, TOTAL, 'Locating Angular entry files…');
-  const mainTsPath = findMainTs(angularJsonPath);
+  const mainTsPath = findMainTs(workspaceConfigPath);
   if (!mainTsPath) {
     err('Could not locate main.ts. Please patch manually (see docs).');
     process.exit(1);
@@ -366,7 +448,7 @@ export async function runInit(args: string[]): Promise<void> {
 
   if (scriptTagOnly) {
     // Script-tag mode: patch index.html
-    const indexHtmlPath = findIndexHtml(angularJsonPath);
+    const indexHtmlPath = findIndexHtml(workspaceConfigPath);
     if (!indexHtmlPath) {
       err('Could not locate index.html. Please add the script tag manually.');
       process.exit(1);
@@ -440,7 +522,7 @@ export async function run(): Promise<void> {
 
   if (command === '--help' || command === '-h' || command === 'help') {
     log('');
-    log(`${c.bold}Usage:${c.reset} npx angular-render-scan [command] [options]`);
+    log(`${c.bold}Usage:${c.reset} npx angular-render-scan-cli [command] [options]`);
     log('');
     log(`${c.bold}Commands:${c.reset}`);
     log('  init              Auto-patch your Angular project (default)');
@@ -451,9 +533,9 @@ export async function run(): Promise<void> {
     log('  --script-tag      Use CDN script tag in index.html instead of provider');
     log('');
     log(`${c.bold}Examples:${c.reset}`);
-    log('  npx angular-render-scan init');
-    log('  npx angular-render-scan init --dry-run');
-    log('  npx angular-render-scan init --script-tag');
+    log('  npx angular-render-scan-cli init');
+    log('  npx angular-render-scan-cli init --dry-run');
+    log('  npx angular-render-scan-cli init --script-tag');
     log('');
     return;
   }
