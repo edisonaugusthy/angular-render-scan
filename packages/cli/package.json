@@ -1,6 +1,6 @@
 {
   "name": "angular-render-scan-cli",
-  "version": "0.1.5",
+  "version": "0.1.10",
   "description": "CLI installer for angular-render-scan — zero-friction Angular performance profiler setup.",
   "keywords": [
     "angular",
