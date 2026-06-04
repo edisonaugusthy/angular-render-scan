@@ -1,6 +1,6 @@
 {
   "name": "angular-render-scan",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Visual Angular change-detection scanner for debugging component renders.",
   "keywords": [
     "angular",
@@ -41,6 +41,10 @@
     ".": {
       "types": "./dist/types/angular-render-scan.d.ts",
       "default": "./dist/fesm2022/angular-render-scan.mjs"
+    },
+    "./noop": {
+      "types": "./dist/types/noop.d.ts",
+      "default": "./dist/fesm2022/noop.mjs"
     },
     "./auto.global": "./dist/auto.global.js"
   },

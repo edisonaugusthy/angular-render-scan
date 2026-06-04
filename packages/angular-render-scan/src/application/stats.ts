@@ -5,8 +5,15 @@ import type {
   AngularRenderScanRenderDetails,
   AngularRenderScanResolvedOptions,
   AngularRenderMutationType,
-  WaterfallEntry
+  WaterfallEntry,
+  OnPushCandidate,
+  ReferentialInstabilityReport,
+  CdTriggerSource
 } from '../domain/entities';
+import { analyzeOnPushCandidates } from './onpush-analyzer';
+import { getReferentialInstabilityReports, resetReferentialStability, clearReferentialStabilityStats } from './referential-stability';
+import { buildCdGraph, recordParentChildRender, resetCdGraph } from './cd-graph';
+import type { CdGraph } from '../domain/entities';
 
 interface ComponentStats extends AngularRenderScanRegisteredComponent {
   totalDuration: number;
@@ -15,6 +22,8 @@ interface ComponentStats extends AngularRenderScanRegisteredComponent {
   latestCycleId: number;
   latestDetails: AngularRenderScanRenderDetails;
   wastedChecks: number;
+  inputChangeCount: number;
+  lastTrigger?: CdTriggerSource;
 }
 
 let cycleId = 0;
@@ -35,7 +44,10 @@ export function registerComponent(component: AngularRenderScanRegisteredComponen
     latestDuration: existing?.latestDuration ?? 0,
     latestCycleId: existing?.latestCycleId ?? 0,
     latestDetails: existing?.latestDetails ?? {},
-    wastedChecks: existing?.wastedChecks ?? 0
+    wastedChecks: existing?.wastedChecks ?? 0,
+    inputChangeCount: existing?.inputChangeCount ?? 0,
+    cdStrategy: component.cdStrategy ?? existing?.cdStrategy ?? 'unknown',
+    parentId: component.parentId ?? existing?.parentId ?? null
   });
 
   if (component.element && typeof MutationObserver !== 'undefined' && !observers.has(component.id)) {
@@ -62,7 +74,7 @@ export function registerComponent(component: AngularRenderScanRegisteredComponen
       observer.observe(component.element, { attributes: true, characterData: true, childList: true, subtree: true });
       state.observer = observer;
       observers.set(component.id, state);
-    } catch (e) {
+    } catch {
       // Ignore observer failures in test environments
     }
   }
@@ -82,7 +94,8 @@ export function recordComponentCheck(
   duration: number,
   currentCycleId = cycleId,
   details: AngularRenderScanRenderDetails = {},
-  timing?: { startTime: number; totalDuration: number; depth: number }
+  timing?: { startTime: number; totalDuration: number; depth: number },
+  lastTrigger?: CdTriggerSource
 ): AngularRenderEntry | undefined {
   const stats = components.get(id);
   if (!stats || !stats.element.isConnected) {
@@ -93,11 +106,22 @@ export function recordComponentCheck(
   stats.latestDuration = Math.max(0, duration);
   stats.totalDuration += stats.latestDuration;
   stats.latestCycleId = currentCycleId;
+  if (lastTrigger) stats.lastTrigger = lastTrigger;
 
   // Track wasted checks
   const isWasted = details.mutationType === 'none';
   if (isWasted) {
     stats.wastedChecks += 1;
+  }
+
+  // Track input changes
+  if (details.changedInputs && details.changedInputs.length > 0) {
+    stats.inputChangeCount += 1;
+  }
+
+  // Record parent→child edge in CD graph
+  if (details.parentId && details.parentId !== id) {
+    recordParentChildRender(details.parentId, id);
   }
 
   // Determine final mutation type
@@ -119,7 +143,8 @@ export function recordComponentCheck(
   stats.latestDetails = {
     reason: details.reason ?? 'unknown',
     changedInputs: details.changedInputs?.slice(0, 6),
-    mutationType: finalMutationType
+    mutationType: finalMutationType,
+    parentId: details.parentId ?? stats.parentId ?? null
   };
 
   // Add waterfall entry
@@ -180,6 +205,8 @@ export function resetStats(): void {
   }
   observers.clear();
   components.clear();
+  resetReferentialStability();
+  resetCdGraph();
 }
 
 export function clearStats(): void {
@@ -191,10 +218,13 @@ export function clearStats(): void {
     stats.latestCycleId = 0;
     stats.latestDetails = {};
     stats.wastedChecks = 0;
+    stats.inputChangeCount = 0;
   }
   for (const state of observers.values()) {
     state.lastMutation = 'none';
   }
+  clearReferentialStabilityStats();
+  resetCdGraph();
 }
 
 export function getWastedStats(): { totalChecks: number; wastedChecks: number; wastedPercentage: number } {
@@ -214,10 +244,52 @@ export function getLeakedComponents(): AngularRenderEntry[] {
     .map(toEntry);
 }
 
+export function getOnPushCandidates(threshold = 40): OnPushCandidate[] {
+  const data = [...components.values()].map(c => ({
+    id: c.id,
+    name: c.name,
+    selector: c.selector ?? selectorFor(c.element),
+    totalChecks: c.totalChecks,
+    wastedChecks: c.wastedChecks,
+    totalDuration: c.totalDuration,
+    cdStrategy: c.cdStrategy ?? 'unknown',
+    inputChangeCount: c.inputChangeCount
+  }));
+  return analyzeOnPushCandidates(data, threshold);
+}
+
+export function getReferentialInstability(minUnstable = 1): ReferentialInstabilityReport[] {
+  return getReferentialInstabilityReports(minUnstable);
+}
+
+export function getCdGraph(): CdGraph {
+  const totalDurationAll = [...components.values()].reduce((s, c) => s + c.totalDuration, 0);
+  const data = [...components.values()].map(c => {
+    const wastedPct = c.totalChecks > 0 ? Math.round((c.wastedChecks / c.totalChecks) * 100) : 0;
+    return {
+      id: c.id,
+      name: c.name,
+      selector: c.selector ?? selectorFor(c.element),
+      parentId: c.parentId ?? null,
+      depth: 1,
+      renderCount: c.totalChecks,
+      totalDuration: c.totalDuration,
+      wastedChecks: c.wastedChecks,
+      totalChecks: c.totalChecks,
+      cdStrategy: c.cdStrategy ?? 'unknown',
+      isOnPushCandidate: wastedPct >= 40 && (c.cdStrategy === 'Default' || c.cdStrategy === 'unknown'),
+      lastTrigger: c.lastTrigger
+    };
+  });
+  return buildCdGraph(data);
+}
+
 function toEntry(stats: ComponentStats): AngularRenderEntry {
   const count = stats.totalChecks;
   const wastedChecks = stats.wastedChecks || 0;
   const wastedPercentage = count === 0 ? 0 : Math.round((wastedChecks / count) * 100);
+  const isOnPushCandidate = (stats.cdStrategy === 'Default' || stats.cdStrategy === 'unknown') &&
+    wastedPercentage >= 40 && count >= 5;
 
   return {
     id: stats.id,
@@ -235,7 +307,10 @@ function toEntry(stats: ComponentStats): AngularRenderEntry {
     selector: stats.selector ?? (stats.element ? selectorFor(stats.element) : ''),
     wastedChecks,
     wastedPercentage,
-    mutationType: stats.latestDetails.mutationType ?? 'none'
+    mutationType: stats.latestDetails.mutationType ?? 'none',
+    cdStrategy: stats.cdStrategy ?? 'unknown',
+    isOnPushCandidate,
+    parentId: stats.parentId ?? null
   };
 }
 
@@ -256,6 +331,10 @@ function shouldIncludeEntry(entry: AngularRenderEntry, options?: AngularRenderSc
   if (options.exclude.length > 0 && matchesAny(entry, options.exclude)) {
     return false;
   }
+  // trackComponents filter: if specified, only include matching components
+  if (options.trackComponents && options.trackComponents.length > 0 && !matchesAny(entry, options.trackComponents)) {
+    return false;
+  }
 
   return true;
 }
@@ -272,6 +351,7 @@ function matchesAny(entry: AngularRenderEntry, patterns: Array<string | RegExp>)
 }
 
 function selectorFor(element: Element): string {
+  if (!element) return '';
   const tag = element.tagName.toLowerCase();
   const id = element.id ? `#${element.id}` : '';
   const className = element.classList.length > 0 ? `.${Array.from(element.classList).slice(0, 3).join('.')}` : '';

@@ -8,15 +8,20 @@ Angular Render Scan is a visual debugging overlay for Angular change detection. 
 
 - **Automatic Angular Telemetry:** Out-of-the-box zero-setup component auto-instrumentation using Angular dev-mode profiler hooks.
 - **Heatmap & Outlines:** Highlights are colored dynamically based on DOM mutations: **green** for no-op wasted renders, **blue** for text/attribute mutations, and **prominent red borders** for expensive renders exceeding thresholds, making bottlenecks instantly recognizable.
+- **CD Trigger Attribution:** Every change detection cycle is labeled with what triggered it — `zone:click`, `zone:setTimeout`, `zone:xhr`, `signal:write`, `router:navigation`, `manual:markForCheck`, and more. The toolbar shows the source of the last cycle at a glance.
+- **OnPush Candidates Surface:** Automatically identifies `ChangeDetectionStrategy.Default` components with high wasted-render percentages and ranks them as OnPush conversion candidates with confidence scoring (high/medium/low).
+- **Referential Input Stability Detection:** Tracks `@Input()` values across cycles using deep serialization and flags inputs where a new object reference carries the same value — the primary source of OnPush false positives.
+- **Zone Pollution Detector:** Flags CD cycles that have no user interaction, no signal write, and no router navigation as suspected Zone pollution. Shows a live feed of polluted cycles in the toolbar.
+- **Change Detection Graph:** Builds a session-level component graph of parent→child render relationships, including edge trigger counts and per-node CD strategy metadata.
 - **CD Waterfall View:** Click the SVG sparkline in the toolbar to expand a nested horizontal bar breakdown of component check execution stack offsets and children offsets.
 - **Non-Intrusive Budget Alerts Feed:** Standardized budget violations (warning/error millisecond limits and rate alerts) are elegantly grouped and logged in a collapsible alerts feed panel, handling concurrent violations cleanly.
 - **Live CPU & Main-Thread Telemetry:** Dotted CPU metric toggles a live popup showing detailed frame-lag latency and total main-thread blocking times.
 - **Memory Leak Detector Badge:** Automatically tracks zombie components whose DOM elements were disconnected but not properly destroyed.
 - **Click-to-Source IDE Integration:** Inspected details panel provides an "Open in Editor" link that deep links directly to Cursor, VS Code or WebStorm, and automatically copies the class query to your clipboard for instant search.
-- **Session Export JSON:** Download a full profiling JSON bundle including CPU, cycle timelines, wasted statistics, and active budget violation logs.
+- **Session Export JSON:** Download a full profiling JSON bundle including CPU, cycle timelines, wasted statistics, OnPush candidates, Zone pollution events, and referential instability reports.
 - **Dark Mode & Theme Presets:** Sleek dark mode styles that match `prefers-color-scheme`, customizable dynamically via options.
 - **Keyboard Shortcuts:** Keyboard hotkeys mapped to toggle scan, details panel, copy prompts, and clear stats instantly.
-- **Production Guard:** Automatic safety guard shutting down package overhead entirely outside developer mode.
+- **Production Guard:** Automatic safety guard shutting down package overhead entirely outside developer mode. Zone tracker lazy-loaded so it tree-shakes to zero in production bundles.
 
 ## Install
 
@@ -26,7 +31,23 @@ npm install angular-render-scan
 
 Angular Render Scan expects Angular 9+ as a peer dependency.
 
-## Quick Start
+## Zero-Config Setup with the CLI
+
+The fastest way to add Angular Render Scan to any project:
+
+```sh
+npx angular-render-scan-cli init
+```
+
+The CLI detects `angular.json`, finds your `main.ts` or `app.config.ts`, installs the npm package, and injects `provideAngularRenderScan()` into your providers — no manual editing required.
+
+```sh
+npx angular-render-scan-cli init --dry-run      # preview changes without writing
+npx angular-render-scan-cli init --script-tag   # use CDN script tag instead of npm
+npx angular-render-scan-cli --help
+```
+
+## Quick Start (Manual)
 
 Add `provideAngularRenderScan()` to your Angular bootstrap providers.
 
@@ -118,7 +139,6 @@ stop();
 ```
 
 ## Options
-
 ```ts
 interface AngularRenderScanOptions {
   enabled?: boolean;
@@ -138,6 +158,23 @@ interface AngularRenderScanOptions {
   theme?: Partial<AngularRenderScanTheme>;
   editorProtocol?: 'vscode' | 'webstorm' | 'cursor' | string;
   darkMode?: 'auto' | 'dark' | 'light';
+
+  // CD Trigger Attribution
+  showCdGraph?: boolean;
+
+  // Zone Pollution Detector
+  maxZonePollutionEvents?: number;           // default: 50
+  onZonePollution?: (event: ZonePollutionEvent) => void;
+
+  // OnPush Candidates
+  onPushCandidateThreshold?: number;         // wasted-render % threshold, default: 40
+  trackComponents?: Array<string | RegExp>;  // limit tracking to specific components
+
+  // Referential Input Stability
+  trackReferentialStability?: boolean;       // default: true
+  referentialStabilityDepth?: number;        // deep-equal max depth, default: 4
+
+  // Callbacks
   onCycleStart?: () => void;
   onRender?: (entry: AngularRenderEntry) => void;
   onCycleFinish?: (cycle: AngularRenderCycle) => void;
@@ -254,15 +291,87 @@ interface AngularRenderScanTheme {
 }
 ```
 
+## New API Functions
+
+```ts
+import {
+  getOnPushCandidates,
+  getReferentialInstability,
+  getZonePollutionEvents,
+  getCdGraph
+} from 'angular-render-scan';
+
+// Components that are safe to switch to ChangeDetectionStrategy.OnPush
+const candidates = getOnPushCandidates(40); // threshold: wasted-render %
+
+// Inputs where a new reference carried the same value
+const unstable = getReferentialInstability(1); // minUnstableRefs
+
+// Cycles that fired with no user interaction / signal / router trigger
+const pollution = getZonePollutionEvents();
+
+// Session-level component dependency graph
+const graph = getCdGraph();
+// graph.nodes: per-component stats (cdStrategy, renderCount, wastedChecks, isOnPushCandidate)
+// graph.edges: parent→child trigger counts
+```
+
+### OnPush Candidate shape
+
+```ts
+interface OnPushCandidate {
+  componentId: string;
+  selector: string;
+  wastedRenderPct: number;    // percentage of renders that were no-ops
+  totalChecks: number;
+  confidence: 'high' | 'medium' | 'low';
+  reason: string;
+}
+```
+
+### Zone Pollution Event shape
+
+```ts
+interface ZonePollutionEvent {
+  timestamp: number;
+  cycleId: string;
+  suspectedTrigger: string;   // best-guess Zone task description
+  componentCount: number;
+}
+```
+
+### Referential Instability Report shape
+
+```ts
+interface ReferentialInstabilityReport {
+  componentId: string;
+  selector: string;
+  inputKey: string;
+  unstableRefCount: number;   // how many times a new ref held the same value
+  totalInputChanges: number;
+}
+```
+
+### Production no-op subpath
+
+For SSR, unit tests, or any context where you want to explicitly import stubs:
+
+```ts
+import { getOnPushCandidates } from 'angular-render-scan/noop';
+// All functions return empty arrays / null — safe to call anywhere
+```
+
 ## Toolbar
 
 The toolbar shows:
-
 - scan on/off switch
 - FPS
 - latest cycle time
+- CD trigger source (last cycle — e.g. `zone:click`, `signal:write`)
 - changed component count
 - slowest component
+- OnPush candidates chip (count — click to open ranked list)
+- Zone pollution chip (count — click to open event feed)
 - copy slow issues prompt
 - clear stats button
 

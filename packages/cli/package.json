@@ -1,0 +1,38 @@
+{
+  "name": "angular-render-scan-cli",
+  "version": "0.1.5",
+  "description": "CLI installer for angular-render-scan — zero-friction Angular performance profiler setup.",
+  "keywords": [
+    "angular",
+    "cli",
+    "performance",
+    "change-detection",
+    "angular-render-scan"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "angular-render-scan": "./bin/cli.js"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "package.json",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "dependencies": {
+    "picocolors": "^1.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "typescript": "^5.9.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

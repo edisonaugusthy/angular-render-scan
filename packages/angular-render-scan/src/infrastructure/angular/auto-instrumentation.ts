@@ -1,12 +1,35 @@
 import { beginCycle, currentCycleId, endCycle, ensureCycleForComponentCheck } from '../../application/runtime';
 import { recordComponentCheck, registerComponent, unregisterComponent } from '../../application/stats';
+import { checkReferentialStability } from '../../application/referential-stability';
+import { getResolvedOptions } from '../../domain/options';
 import type { AngularRenderChangedInput, AngularRenderScanRenderDetails } from '../../domain/entities';
 
 const ProfilerEventTemplateUpdateStart = 2;
 const ProfilerEventTemplateUpdateEnd = 3;
 
 let nextAutoComponentId = 0;
-const instanceMap = new WeakMap<any, { id: string, name: string, element: Element, signature: string, inputSnapshot: Map<string, string> }>();
+
+interface AutoCompData {
+  id: string;
+  name: string;
+  element: Element;
+  signature: string;
+  inputSnapshot: Map<string, string>;
+  inputRefSnapshot: Map<string, unknown>;
+  cdStrategy: 'OnPush' | 'Default' | 'unknown';
+  parentId: string | null;
+}
+
+const instanceMap = new WeakMap<object, AutoCompData>();
+
+// Stack frame during template update traversal
+interface StackFrame {
+  id: string;
+  parentId: string | null;
+  startTime: number;
+  childrenDuration: number;
+  details: AngularRenderScanRenderDetails;
+}
 
 function normalizeText(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
@@ -24,15 +47,15 @@ function getRenderedSignature(element: Element): string {
   ].join('|');
 }
 
-function getInputNames(instance: any): Array<{ publicName: string; propertyName: string }> {
-  const inputs = instance?.constructor?.ɵcmp?.inputs;
+function getInputNames(instance: object): Array<{ publicName: string; propertyName: string }> {
+  const inputs = (instance as any)?.constructor?.ɵcmp?.inputs;
   if (!inputs || typeof inputs !== 'object') {
     return [];
   }
 
   return Object.entries(inputs).map(([publicName, metadata]) => {
     if (Array.isArray(metadata) && typeof metadata[0] === 'string') {
-      return { publicName, propertyName: metadata[0] };
+      return { publicName, propertyName: metadata[0] as string };
     }
     if (typeof metadata === 'string') {
       return { publicName, propertyName: metadata };
@@ -46,7 +69,7 @@ function summarizeValue(value: unknown): string {
   if (value === undefined) return 'undefined';
   if (typeof value === 'string') return JSON.stringify(value.length > 80 ? `${value.slice(0, 77)}...` : value);
   if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value);
-  if (Array.isArray(value)) return `Array(${value.length})`;
+  if (Array.isArray(value)) return `Array(${(value as unknown[]).length})`;
   if (typeof value === 'function') return 'Function';
   if (typeof value === 'object') {
     const ctor = (value as { constructor?: { name?: string } }).constructor?.name;
@@ -55,15 +78,54 @@ function summarizeValue(value: unknown): string {
   return typeof value;
 }
 
-function detectInputChanges(instance: any, snapshot: Map<string, string>): AngularRenderChangedInput[] {
+/**
+ * Read the ChangeDetectionStrategy from Angular component metadata.
+ * 0 = OnPush, 2 = Default (Angular internal enum values)
+ */
+function readCdStrategy(instance: object): 'OnPush' | 'Default' | 'unknown' {
+  const cmp = (instance as any)?.constructor?.ɵcmp;
+  if (!cmp) return 'unknown';
+  // changeDetection: 0 = OnPush, 2 = Default
+  const cd = cmp.changeDetection;
+  if (cd === 0) return 'OnPush';
+  if (cd === 2) return 'Default';
+  return 'unknown';
+}
+
+function detectInputChanges(
+  instance: object,
+  compData: AutoCompData,
+  enableReferentialStability: boolean,
+  referentialStabilityDepth: number
+): AngularRenderChangedInput[] {
   const changes: AngularRenderChangedInput[] = [];
   for (const { publicName, propertyName } of getInputNames(instance)) {
-    const current = summarizeValue(instance[propertyName]);
-    const previous = snapshot.get(publicName);
+    const rawValue = (instance as any)[propertyName];
+    const current = summarizeValue(rawValue);
+    const previous = compData.inputSnapshot.get(publicName);
+
     if (previous !== undefined && previous !== current) {
-      changes.push({ name: publicName, previous, current });
+      let isReferentiallyUnstable = false;
+
+      if (enableReferentialStability && rawValue !== null && typeof rawValue === 'object') {
+        // Check referential stability: new reference, but same deep value?
+        isReferentiallyUnstable = checkReferentialStability(
+          compData.id,
+          compData.name,
+          compData.element.tagName.toLowerCase(),
+          publicName,
+          rawValue,
+          referentialStabilityDepth
+        );
+      }
+
+      changes.push({ name: publicName, previous, current, isReferentiallyUnstable });
     }
-    snapshot.set(publicName, current);
+
+    compData.inputSnapshot.set(publicName, current);
+    if (rawValue !== null && typeof rawValue === 'object') {
+      compData.inputRefSnapshot.set(publicName, rawValue);
+    }
   }
 
   return changes.slice(0, 6);
@@ -75,53 +137,105 @@ export function setupAutoInstrumentation(): void {
   const trySetup = () => {
     const globalNg = (window as any).ng;
     if (!globalNg || !globalNg.ɵsetProfiler || !globalNg.getHostElement) {
-      if (attempts++ < 50) { // Retry for up to 5 seconds
+      if (attempts++ < 50) {
         setTimeout(trySetup, 100);
       }
       return;
     }
 
-    const componentCheckStack: { id: string, startTime: number, childrenDuration: number, details: AngularRenderScanRenderDetails }[] = [];
+    const componentCheckStack: StackFrame[] = [];
 
-    globalNg.ɵsetProfiler((event: number, instance: any) => {
+    globalNg.ɵsetProfiler((event: number, instance: object) => {
       if (!instance) return;
+
+      const options = getResolvedOptions();
 
       if (event === ProfilerEventTemplateUpdateStart) {
         ensureCycleForComponentCheck();
-        
+
         let compData = instanceMap.get(instance);
         if (!compData) {
           try {
             const element = globalNg.getHostElement(instance);
             if (element && element instanceof Element && !element.hasAttribute('angularRenderScanMark')) {
-              const name = instance.constructor?.name || 'AnonymousComponent';
+              const name = (instance as any).constructor?.name || 'AnonymousComponent';
               const id = `ng-scan-auto-${++nextAutoComponentId}`;
-              compData = { id, name, element, signature: '', inputSnapshot: new Map() };
+              const cdStrategy = readCdStrategy(instance);
+
+              // Determine parent from stack
+              const parentId = componentCheckStack.length > 0
+                ? componentCheckStack[componentCheckStack.length - 1].id
+                : null;
+
+              compData = {
+                id,
+                name,
+                element,
+                signature: '',
+                inputSnapshot: new Map(),
+                inputRefSnapshot: new Map(),
+                cdStrategy,
+                parentId
+              };
               instanceMap.set(instance, compData);
-              registerComponent({ ...compData, selector: element.tagName.toLowerCase() });
+              registerComponent({
+                ...compData,
+                selector: element.tagName.toLowerCase(),
+                cdStrategy,
+                parentId
+              });
             } else {
-               // Null object to prevent retrying or processing tracked elements
-               instanceMap.set(instance, { id: '', name: '', element: null as any, signature: '', inputSnapshot: new Map() });
+              instanceMap.set(instance, {
+                id: '',
+                name: '',
+                element: null as any,
+                signature: '',
+                inputSnapshot: new Map(),
+                inputRefSnapshot: new Map(),
+                cdStrategy: 'unknown',
+                parentId: null
+              });
             }
-          } catch (e) {
-            instanceMap.set(instance, { id: '', name: '', element: null as any, signature: '', inputSnapshot: new Map() });
+          } catch {
+            instanceMap.set(instance, {
+              id: '',
+              name: '',
+              element: null as any,
+              signature: '',
+              inputSnapshot: new Map(),
+              inputRefSnapshot: new Map(),
+              cdStrategy: 'unknown',
+              parentId: null
+            });
           }
         }
 
         if (compData && compData.element) {
-          const changedInputs = detectInputChanges(instance, compData.inputSnapshot);
+          const changedInputs = detectInputChanges(
+            instance,
+            compData,
+            options.trackReferentialStability,
+            options.referentialStabilityDepth
+          );
+
+          const parentId = componentCheckStack.length > 0
+            ? componentCheckStack[componentCheckStack.length - 1].id
+            : compData.parentId;
+
           componentCheckStack.push({
             id: compData.id,
+            parentId,
             startTime: performance.now(),
             childrenDuration: 0,
             details: {
               reason: changedInputs.length > 0 ? 'input' : 'unknown',
-              changedInputs
+              changedInputs,
+              parentId
             }
           });
         }
       } else if (event === ProfilerEventTemplateUpdateEnd) {
-        let compData = instanceMap.get(instance);
+        const compData = instanceMap.get(instance);
         if (compData && compData.element && componentCheckStack.length > 0) {
           const depth = componentCheckStack.length;
           const frame = componentCheckStack.pop()!;
@@ -131,12 +245,12 @@ export function setupAutoInstrumentation(): void {
               const totalDuration = performance.now() - frame.startTime;
               const selfDuration = Math.max(0, totalDuration - frame.childrenDuration);
 
-              // Add our total duration to the parent's childrenDuration
+              // Propagate duration to parent
               if (componentCheckStack.length > 0) {
                 componentCheckStack[componentCheckStack.length - 1].childrenDuration += totalDuration;
               }
 
-              // Check if actual DOM mutation occurred to prevent full-screen flashing
+              // Check if actual DOM mutation occurred
               const nextSignature = getRenderedSignature(compData.element);
               const signatureChanged = compData.signature !== nextSignature;
               const isWasted = !signatureChanged && frame.details.reason !== 'input';
@@ -152,7 +266,8 @@ export function setupAutoInstrumentation(): void {
                 {
                   reason: frame.details.reason === 'input' ? 'input' : signatureChanged ? 'dom' : 'unknown',
                   changedInputs: frame.details.changedInputs,
-                  mutationType: isWasted ? 'none' : undefined
+                  mutationType: isWasted ? 'none' : undefined,
+                  parentId: frame.parentId
                 },
                 {
                   startTime: frame.startTime,
@@ -165,7 +280,7 @@ export function setupAutoInstrumentation(): void {
               }
             }
           } else {
-            // Stack mismatch, try to recover by pushing it back or clearing
+            // Stack mismatch — recover
             componentCheckStack.length = 0;
           }
         }

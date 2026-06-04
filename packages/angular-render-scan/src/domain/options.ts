@@ -32,7 +32,13 @@ const defaultOptions: AngularRenderScanResolvedOptions = {
   theme: defaultTheme,
   budgets: defaultBudgets,
   editorProtocol: 'vscode',
-  darkMode: 'auto'
+  darkMode: 'auto',
+  showCdGraph: true,
+  maxZonePollutionEvents: 50,
+  trackComponents: [],
+  onPushCandidateThreshold: 40,
+  trackReferentialStability: true,
+  referentialStabilityDepth: 4,
 };
 
 let options: AngularRenderScanResolvedOptions = { ...defaultOptions };
@@ -48,16 +54,20 @@ export function resolveOptions(next?: AngularRenderScanOptions): AngularRenderSc
   merged.minRenderCount = normalizeNonNegative(merged.minRenderCount, defaultOptions.minRenderCount);
   merged.maxLabelCount = normalizePositiveInteger(merged.maxLabelCount, defaultOptions.maxLabelCount);
   merged.maxRecordedCycles = normalizePositiveInteger(merged.maxRecordedCycles, defaultOptions.maxRecordedCycles);
+  merged.maxZonePollutionEvents = normalizePositiveInteger(merged.maxZonePollutionEvents, defaultOptions.maxZonePollutionEvents);
   merged.include = Array.isArray(merged.include) ? merged.include : defaultOptions.include;
   merged.exclude = Array.isArray(merged.exclude) ? merged.exclude : defaultOptions.exclude;
+  merged.trackComponents = Array.isArray(merged.trackComponents) ? merged.trackComponents : defaultOptions.trackComponents;
   merged.promptContext = typeof merged.promptContext === 'string' ? merged.promptContext : defaultOptions.promptContext;
   merged.showCopyPrompt = typeof next?.showCopyPrompt === 'boolean' ? next.showCopyPrompt : options.showCopyPrompt;
+  merged.showCdGraph = typeof next?.showCdGraph === 'boolean' ? next.showCdGraph : options.showCdGraph;
+  merged.trackReferentialStability = typeof next?.trackReferentialStability === 'boolean' ? next.trackReferentialStability : options.trackReferentialStability;
   merged.theme = { ...options.theme, ...(next?.theme || {}) };
-
   merged.budgets = defaultBudgets;
-
   merged.editorProtocol = typeof next?.editorProtocol === 'string' ? next.editorProtocol : options.editorProtocol;
-  merged.darkMode = ['auto', 'dark', 'light'].includes(next?.darkMode as any) ? next!.darkMode! : options.darkMode;
+  merged.darkMode = ['auto', 'dark', 'light'].includes(next?.darkMode as string) ? next!.darkMode! : options.darkMode;
+  merged.onPushCandidateThreshold = normalizeNonNegative(merged.onPushCandidateThreshold, defaultOptions.onPushCandidateThreshold);
+  merged.referentialStabilityDepth = normalizePositiveInteger(merged.referentialStabilityDepth, defaultOptions.referentialStabilityDepth);
 
   return merged;
 }
