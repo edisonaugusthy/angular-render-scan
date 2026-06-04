@@ -1,13 +1,28 @@
 import { AngularRenderScanOverlay } from '../infrastructure/ui/overlay';
 import { getResolvedOptions, resolveOptions, setResolvedOptions } from '../domain/options';
-import { finishCycle, resetStats, startCycle, getWastedStats, getLeakedComponents } from './stats';
+import {
+  finishCycle,
+  resetStats,
+  startCycle,
+  getWastedStats as statsGetWastedStats,
+  getLeakedComponents as statsGetLeakedComponents,
+  getOnPushCandidates as statsGetOnPushCandidates,
+  getReferentialInstability as statsGetReferentialInstability,
+  getCdGraph as statsGetCdGraph,
+  clearStats
+} from './stats';
 import type {
   AngularRenderCycle,
   AngularRenderEntry,
   AngularRenderScanOptions,
   BudgetViolation,
+  CdTriggerAttribution,
+  OnPushCandidate,
+  ReferentialInstabilityReport,
   SessionExportData,
-  WastedStats
+  WastedStats,
+  ZonePollutionEvent,
+  CdGraph
 } from '../domain/entities';
 
 let overlay: AngularRenderScanOverlay | undefined;
@@ -17,6 +32,24 @@ let lastCycle: AngularRenderCycle | undefined;
 let implicitCycleScheduled = false;
 let recentCycles: AngularRenderCycle[] = [];
 let activeSessionBudgetViolations: BudgetViolation[] = [];
+let activeZonePollutionEvents: ZonePollutionEvent[] = [];
+
+// Lazily-loaded Zone tracker references (avoid importing in test/non-Zone envs)
+let _resolveTrigger: (() => CdTriggerAttribution) | null = null;
+let _resetCycleTrigger: (() => void) | null = null;
+
+async function ensureZoneTracker() {
+  if (_resolveTrigger) return;
+  try {
+    const mod = await import('../infrastructure/angular/zone-tracker');
+    _resolveTrigger = mod.resolveTriggerAttribution;
+    _resetCycleTrigger = mod.resetCycleTriggerState;
+  } catch {
+    // Zone tracker unavailable
+  }
+}
+// Pre-load asynchronously so it's ready by the time the first cycle fires
+ensureZoneTracker();
 
 let scheduleTask = (fn: () => void) => queueMicrotask(fn);
 
@@ -51,14 +84,7 @@ export function stop(): void {
   activeCycleStartedAt = 0;
   implicitCycleScheduled = false;
   activeSessionBudgetViolations = [];
-  
-  if (typeof window !== 'undefined') {
-    const globalWindow = window as any;
-    if (globalWindow.__ANGULAR_RENDER_SCAN_APP_REF__) {
-      // Assuming restoreApplicationRef was called via the global stop or we can't easily reach it here without circular deps.
-      // But we can dispatch an event or just let the global handle it.
-    }
-  }
+  activeZonePollutionEvents = [];
 }
 
 export function beginCycle(): number {
@@ -96,16 +122,46 @@ export function endCycle(cycleId = activeCycleId): AngularRenderCycle | undefine
   const options = getResolvedOptions();
   const finishedAt = performance.now();
   const cycle = finishCycle(cycleId, activeCycleStartedAt, finishedAt, options);
+
+  // ─── CD Trigger Attribution ───────────────────────────────────────────────
+  let trigger: CdTriggerAttribution | undefined;
+  if (_resolveTrigger) {
+    trigger = _resolveTrigger();
+    cycle.trigger = trigger;
+    cycle.isZonePollution = trigger.isZonePollution;
+  }
+  _resetCycleTrigger?.();
+
+  // ─── Zone Pollution Detection ─────────────────────────────────────────────
+  if (trigger?.isZonePollution && cycle.entries.length > 0) {
+    const pollutionEvent: ZonePollutionEvent = {
+      timestamp: Date.now(),
+      source: trigger.source,
+      detail: trigger.detail,
+      callSite: trigger.callSite,
+      componentCount: cycle.entries.length,
+      cycleDuration: cycle.duration
+    };
+    const maxPollution = options.maxZonePollutionEvents ?? 50;
+    activeZonePollutionEvents.push(pollutionEvent);
+    if (activeZonePollutionEvents.length > maxPollution) {
+      activeZonePollutionEvents = activeZonePollutionEvents.slice(-maxPollution);
+    }
+    options.onZonePollution?.(pollutionEvent);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('angular-render-scan:zone-pollution', { detail: pollutionEvent }));
+    }
+  }
+
   lastCycle = cycle;
   recordRecentCycle(cycle, options.maxRecordedCycles);
 
-  // Budget validation checking
+  // ─── Budget validation ────────────────────────────────────────────────────
   const now = performance.now();
   const realNowTimestamp = Date.now();
   if (options.budgets) {
     const { warnMs, errorMs, maxRendersPerSecond } = options.budgets;
     for (const entry of cycle.entries) {
-      // Check warnMs
       if (warnMs !== undefined && entry.latestDuration > warnMs && entry.latestDuration <= (errorMs ?? Infinity)) {
         const violation: BudgetViolation = {
           componentName: entry.name,
@@ -122,7 +178,6 @@ export function endCycle(cycleId = activeCycleId): AngularRenderCycle | undefine
           window.dispatchEvent(new CustomEvent('angular-render-scan:budget-violation', { detail: violation }));
         }
       }
-      // Check errorMs
       if (errorMs !== undefined && entry.latestDuration > errorMs) {
         const violation: BudgetViolation = {
           componentName: entry.name,
@@ -139,7 +194,6 @@ export function endCycle(cycleId = activeCycleId): AngularRenderCycle | undefine
           window.dispatchEvent(new CustomEvent('angular-render-scan:budget-violation', { detail: violation }));
         }
       }
-      // Check render rate (maxRendersPerSecond)
       if (maxRendersPerSecond !== undefined) {
         const rendersInLastSec = getRendersInLastSecond(entry.id, now);
         if (rendersInLastSec > maxRendersPerSecond) {
@@ -169,15 +223,32 @@ export function endCycle(cycleId = activeCycleId): AngularRenderCycle | undefine
   overlay?.showCycle(cycle);
 
   if (options.log && cycle.entries.length > 0) {
-    console.groupCollapsed(`%c[angular-render-scan] cycle ${cycle.id} - ${cycle.duration.toFixed(2)}ms, ${cycle.renderedCount} components`, 'color: #7c3aed; font-weight: bold;');
+    const triggerLabel = trigger
+      ? ` [${trigger.source}${trigger.isZonePollution ? ' ⚠️ POLLUTION' : ''}]`
+      : '';
+    console.groupCollapsed(
+      `%c[angular-render-scan] cycle ${cycle.id} - ${cycle.duration.toFixed(2)}ms, ${cycle.renderedCount} components${triggerLabel}`,
+      'color: #7c3aed; font-weight: bold;'
+    );
     const tableData = cycle.entries.map((e) => ({
       Name: e.name,
       Count: e.count,
       'Time (ms)': Number(e.latestDuration.toFixed(2)),
       'Avg (ms)': Number(e.averageDuration.toFixed(2)),
-      Reason: e.reason ?? 'unknown'
+      Reason: e.reason ?? 'unknown',
+      CD: e.cdStrategy ?? 'unknown',
+      OnPush: e.isOnPushCandidate ? '⚡ candidate' : ''
     }));
     console.table(tableData);
+    if (trigger) {
+      console.log(
+        '%c[trigger]',
+        'color: #0ea5e9;',
+        trigger.source,
+        trigger.detail ?? '',
+        trigger.isZonePollution ? '⚠️ Zone Pollution' : ''
+      );
+    }
     console.groupEnd();
   }
 
@@ -223,7 +294,31 @@ export function getRecording(): AngularRenderCycle[] {
 
 export function clearRecording(): void {
   recentCycles = [];
+  activeZonePollutionEvents = [];
+  activeSessionBudgetViolations = [];
+  clearStats();
 }
+
+// ─── New public exports ────────────────────────────────────────────────────────
+
+export function getOnPushCandidates(threshold?: number): OnPushCandidate[] {
+  const opts = getResolvedOptions();
+  return statsGetOnPushCandidates(threshold ?? opts.onPushCandidateThreshold);
+}
+
+export function getReferentialInstability(minUnstable = 1): ReferentialInstabilityReport[] {
+  return statsGetReferentialInstability(minUnstable);
+}
+
+export function getZonePollutionEvents(): ZonePollutionEvent[] {
+  return [...activeZonePollutionEvents];
+}
+
+export function getCdGraph(): CdGraph {
+  return statsGetCdGraph();
+}
+
+// ─── AI prompt ────────────────────────────────────────────────────────────────
 
 export function getAIPrompt(fps?: number): string {
   const options = getResolvedOptions();
@@ -266,6 +361,10 @@ function buildAIPrompt(cycles: AngularRenderCycle[], options = getResolvedOption
   const slowThreshold = options.budgets?.warnMs ?? 10;
   const fastThreshold = slowThreshold / 2;
 
+  const onPushCandidates = statsGetOnPushCandidates(options.onPushCandidateThreshold);
+  const pollutionEvents = activeZonePollutionEvents.slice(-5);
+  const refInstability = statsGetReferentialInstability().slice(0, 5);
+
   return [
     '# ⚡️ Angular change-detection Performance Audit (via angular-render-scan)',
     'This prompt is self-contained and includes the telemetry evidence of slow/actionable components in the application.',
@@ -275,27 +374,56 @@ function buildAIPrompt(cycles: AngularRenderCycle[], options = getResolvedOption
     ...environment,
     '',
     '## ⏱️ Latest Render Cycle Details:',
-    'Here are the telemetry details of the last captured change detection cycle:',
     `* **Cycle id:** #${latest.id}`,
     `* **Duration:** \`${formatMs(latest.duration)}\``,
+    latest.trigger
+      ? `* **Trigger:** \`${latest.trigger.source}\`${latest.trigger.detail ? ` (${latest.trigger.detail})` : ''}${latest.trigger.isZonePollution ? ' ⚠️ Zone Pollution detected' : ''}`
+      : '',
     `* **Rendered components count:** ${latest.renderedCount}`,
-    latest.slowest ? `* **Slowest component:** \`${latest.slowest.name}\` (${formatMs(latest.slowest.latestDuration)}, reason: \`${latest.slowest.reason ?? 'unknown'}\`)` : '',
+    latest.slowest
+      ? `* **Slowest component:** \`${latest.slowest.name}\` (${formatMs(latest.slowest.latestDuration)}, reason: \`${latest.slowest.reason ?? 'unknown'}\`)`
+      : '',
     `* **Thresholds:** Fast <= \`${formatMs(fastThreshold)}\` | Slow >= \`${formatMs(slowThreshold)}\``,
-    `* **Filters:** Min duration \`${formatMs(options.minDurationMs)}\`, min render count ${options.minRenderCount}`,
     '',
     '## 📈 Recent cycle history:',
     ...cycles.slice(-8).map(formatPromptCycle),
     '',
+    onPushCandidates.length > 0 ? '## ⚡️ OnPush Migration Candidates:' : '',
+    onPushCandidates.length > 0
+      ? 'These components use Default CD and have high wasted render rates. Switching to OnPush should significantly reduce unnecessary checks.'
+      : '',
+    ...onPushCandidates.slice(0, 5).map((c, i) =>
+      `${i + 1}. **${c.name}** (${c.selector}) — ${c.wastedPercentage}% wasted, ~${c.estimatedSavingPct}% estimated saving [${c.confidence} confidence] — ${c.reason}`
+    ),
+    '',
+    pollutionEvents.length > 0 ? '## ⚠️ Zone Pollution Events (last 5):' : '',
+    pollutionEvents.length > 0
+      ? 'These CD cycles were triggered by async operations with no user interaction.'
+      : '',
+    ...pollutionEvents.map(e =>
+      `- ${e.source}${e.detail ? ` (${e.detail})` : ''} — ${e.componentCount} components ran, ${formatMs(e.cycleDuration)}`
+    ),
+    '',
+    refInstability.length > 0 ? '## 🔄 Referentially Unstable Inputs:' : '',
+    refInstability.length > 0
+      ? 'These inputs receive new object references with the same value, causing unnecessary OnPush re-renders.'
+      : '',
+    ...refInstability.map(r =>
+      `- **${r.componentName}** \`@Input() ${r.inputName}\`: ${r.unstableRefCount}/${r.totalRenders} renders (${r.unstableRefPct}%) had same value, new reference`
+    ),
+    '',
     '## 🚨 Slow/error component issues to fix:',
     ...issueEntries.map((entry, index) => formatIssueEntry(entry, index + 1, latest.duration, slowThreshold)),
-    issueEntries.length === 0 ? '- No component exceeded the configured slow threshold in the captured cycles.' : '',
+    issueEntries.length === 0
+      ? '- No component exceeded the configured slow threshold in the captured cycles.'
+      : '',
     '',
     '## 📊 Reference metrics (top observed components):',
     'Overall render footprint and frequencies for active components:',
     ...entries.map((entry, index) => formatReferenceEntry(entry, index + 1)),
     '',
     '## 🛠️ Optimization Instructions:',
-    'Please identify the likely root causes for each slow/error component issue and suggest concrete Angular fixes. Focus on ChangeDetectionStrategy.OnPush, signal/computed usage, template calculations, input reference stabilization, event handlers, and list tracking. Prioritize resolving the highest estimated cost first. Please generate complete, refactored TypeScript templates showing the exact optimized before/after structures. Do not assume access to source code beyond this diagnostic snapshot.'
+    'Please identify the likely root causes for each slow/error component issue and suggest concrete Angular fixes. Focus on ChangeDetectionStrategy.OnPush, signal/computed usage, template calculations, input reference stabilization (memo patterns, pure pipes, stable factories), Zone.js pollution elimination (NgZone.runOutsideAngular), and list tracking (trackBy). For referentially unstable inputs, suggest using pure pipes or stable object factories. Prioritize resolving the highest estimated cost first. Generate complete, refactored TypeScript templates showing optimized before/after structures.'
   ].filter(Boolean).join('\n');
 }
 
@@ -318,17 +446,27 @@ function issueEntriesForPrompt(cycles: AngularRenderCycle[], options = getResolv
   return entries.filter((entry) => entry.latestDuration >= slowThreshold);
 }
 
-function formatIssueEntry(entry: AngularRenderEntry, index: number, latestCycleDuration: number, slowThresholdMs: number): string {
+function formatIssueEntry(
+  entry: AngularRenderEntry,
+  index: number,
+  latestCycleDuration: number,
+  slowThresholdMs: number
+): string {
   const overBy = Math.max(0, entry.latestDuration - slowThresholdMs);
   const cycleShare = latestCycleDuration > 0 ? (entry.latestDuration / latestCycleDuration) * 100 : 0;
   const estimatedTotalCost = entry.averageDuration * entry.count;
   const changedInputsStr = entry.changedInputs?.length
-    ? entry.changedInputs.map((input) => `${input.name} ${input.previous} -> ${input.current}`).join('; ')
+    ? entry.changedInputs
+        .map((input) =>
+          `${input.name} ${input.previous} -> ${input.current}${input.isReferentiallyUnstable ? ' [UNSTABLE REF]' : ''}`
+        )
+        .join('; ')
     : 'none captured';
 
   return [
     `### 🛑 Component #${index}: \`${entry.name}\``,
-    `   Selector: selector ${entry.selector ?? '-'}`,
+    `   Selector: ${entry.selector ?? '-'}`,
+    `   CD Strategy: ${entry.cdStrategy ?? 'unknown'}${entry.isOnPushCandidate ? ' → OnPush candidate ⚡' : ''}`,
     `   Performance Issue: latest render ${formatMs(entry.latestDuration)} exceeded slow threshold ${formatMs(slowThresholdMs)} by ${formatMs(overBy)}.`,
     `   Cost: ${formatMs(entry.latestDuration)} in latest cycle, about ${cycleShare.toFixed(0)}% of latest cycle time, estimated observed total ${formatMs(estimatedTotalCost)} across ${entry.count} renders.`,
     `   Average render: ${formatMs(entry.averageDuration)}`,
@@ -338,18 +476,22 @@ function formatIssueEntry(entry: AngularRenderEntry, index: number, latestCycleD
 }
 
 function formatReferenceEntry(entry: AngularRenderEntry, index: number): string {
-  return `${index}. ${entry.name}: selector ${entry.selector ?? '-'}, latest ${formatMs(entry.latestDuration)}, avg ${formatMs(entry.averageDuration)}, renders ${entry.count}, reason ${entry.reason ?? 'unknown'}`;
+  return `${index}. ${entry.name}: selector ${entry.selector ?? '-'}, latest ${formatMs(entry.latestDuration)}, avg ${formatMs(entry.averageDuration)}, renders ${entry.count}, reason ${entry.reason ?? 'unknown'}, CD: ${entry.cdStrategy ?? '?'}${entry.isOnPushCandidate ? ' ⚡' : ''}`;
 }
 
 function formatPromptCycle(cycle: AngularRenderCycle): string {
   const slowest = cycle.slowest ? `${cycle.slowest.name} ${formatMs(cycle.slowest.latestDuration)}` : 'none';
-  return `- #${cycle.id}: ${formatMs(cycle.duration)}, ${cycle.renderedCount} components, slowest ${slowest}`;
+  const trigger = cycle.trigger
+    ? ` [${cycle.trigger.source}${cycle.isZonePollution ? ' ⚠️' : ''}]`
+    : '';
+  return `- #${cycle.id}: ${formatMs(cycle.duration)}, ${cycle.renderedCount} components, slowest ${slowest}${trigger}`;
 }
 
 function getPromptEnvironment(fps?: number): string[] {
-  const viewport = typeof window !== 'undefined'
-    ? `${window.innerWidth}x${window.innerHeight} @${window.devicePixelRatio || 1}x`
-    : '';
+  const viewport =
+    typeof window !== 'undefined'
+      ? `${window.innerWidth}x${window.innerHeight} @${window.devicePixelRatio || 1}x`
+      : '';
   const url = typeof window !== 'undefined' ? window.location.href : '';
   const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
 
@@ -368,8 +510,10 @@ function formatMs(value: number): string {
 
 export function getSessionData(): SessionExportData {
   const options = getResolvedOptions();
-  const wasted = getWastedStats();
-  const leaks = getLeakedComponents().map((c) => c.name);
+  const wasted = statsGetWastedStats();
+  const leaks = statsGetLeakedComponents().map((c) => c.name);
+  const onPushCandidates = statsGetOnPushCandidates(options.onPushCandidateThreshold);
+  const refInstability = statsGetReferentialInstability();
 
   const mappedCycles = recentCycles.map((cycle) => ({
     id: cycle.id,
@@ -389,14 +533,19 @@ export function getSessionData(): SessionExportData {
       selector: e.selector,
       wastedChecks: e.wastedChecks,
       wastedPercentage: e.wastedPercentage,
-      mutationType: e.mutationType
+      mutationType: e.mutationType,
+      cdStrategy: e.cdStrategy,
+      isOnPushCandidate: e.isOnPushCandidate
     })),
-    waterfall: cycle.waterfall
+    waterfall: cycle.waterfall,
+    trigger: cycle.trigger,
+    isZonePollution: cycle.isZonePollution
   }));
 
-  const viewport = typeof window !== 'undefined'
-    ? `${window.innerWidth}x${window.innerHeight} @${window.devicePixelRatio || 1}x`
-    : '';
+  const viewport =
+    typeof window !== 'undefined'
+      ? `${window.innerWidth}x${window.innerHeight} @${window.devicePixelRatio || 1}x`
+      : '';
   const url = typeof window !== 'undefined' ? window.location.href : '';
   const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
 
@@ -409,9 +558,11 @@ export function getSessionData(): SessionExportData {
     cycles: mappedCycles,
     wastedStats: wasted,
     budgetViolations: activeSessionBudgetViolations,
-    leakedComponents: leaks
+    leakedComponents: leaks,
+    onPushCandidates,
+    zonePollutionEvents: [...activeZonePollutionEvents],
+    referentialInstabilityReports: refInstability
   };
 }
 
-export { getWastedStats, getLeakedComponents };
-
+export { statsGetWastedStats as getWastedStats, statsGetLeakedComponents as getLeakedComponents };

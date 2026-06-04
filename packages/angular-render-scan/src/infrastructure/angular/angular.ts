@@ -1,4 +1,20 @@
-import { APP_INITIALIZER, ApplicationRef, Directive, ElementRef, EnvironmentProviders, InjectionToken, input, effect, OnDestroy, Provider, inject, makeEnvironmentProviders, isDevMode, NgZone } from '@angular/core';
+import {
+  APP_INITIALIZER,
+  ApplicationRef,
+  Directive,
+  ElementRef,
+  EnvironmentProviders,
+  InjectionToken,
+  input,
+  effect,
+  OnDestroy,
+  Provider,
+  inject,
+  makeEnvironmentProviders,
+  isDevMode,
+  NgZone,
+  ChangeDetectorRef
+} from '@angular/core';
 import {
   beginCycle,
   copyAIPrompt,
@@ -11,11 +27,15 @@ import {
   setTaskScheduler,
   getSessionData,
   getWastedStats,
-  getLeakedComponents
+  getLeakedComponents,
+  getOnPushCandidates,
+  getReferentialInstability,
+  getCdGraph
 } from '../../application/runtime';
 import { recordComponentCheck, registerComponent, unregisterComponent } from '../../application/stats';
 import type { AngularRenderScanOptions } from '../../domain/entities';
 import { setupAutoInstrumentation } from './auto-instrumentation';
+import { installZoneHook, resetZoneTracker } from './zone-tracker';
 
 export const ANGULAR_RENDER_SCAN_OPTIONS = new InjectionToken<AngularRenderScanOptions>('ANGULAR_RENDER_SCAN_OPTIONS');
 
@@ -69,11 +89,13 @@ export class AngularRenderScanMarkDirective implements OnDestroy {
       curr = curr.parent;
     }
 
+    const parentId = this.parent ? (this.parent as any)['id'] as string : null;
+
     const entry = recordComponentCheck(
       this.id,
       selfDuration,
       cycleId,
-      {},
+      { parentId },
       {
         startTime: this.checkStartedAt,
         totalDuration,
@@ -94,7 +116,8 @@ export class AngularRenderScanMarkDirective implements OnDestroy {
       id: this.id,
       name: this.name,
       element: this.element,
-      selector: this.element.tagName.toLowerCase()
+      selector: this.element.tagName.toLowerCase(),
+      parentId: this.parent ? (this.parent as any)['id'] as string : null
     });
   }
 
@@ -106,10 +129,6 @@ export class AngularRenderScanMarkDirective implements OnDestroy {
       .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
       .join('');
   }
-}
-
-function normalizeText(text: string): string {
-  return text.replace(/\s+/g, ' ').trim();
 }
 
 export function provideAngularRenderScan(options: AngularRenderScanOptions = {}): EnvironmentProviders {
@@ -128,18 +147,19 @@ function angularRenderScanInitializerProvider(): Provider {
       if (!isDevMode() && !options.dangerouslyForceRunInProduction) {
         return;
       }
-      
+
       setTaskScheduler((fn) => {
         ngZone.runOutsideAngular(() => {
-          // Promise.resolve().then() is generally safer in Zone.js to escape microtask tracking
-          // if queued from outside the zone, whereas queueMicrotask might still be patched tightly.
           Promise.resolve().then(fn);
         });
       });
 
       ngZone.runOutsideAngular(() => {
         scan(options);
+        // Install Zone.js hook for CD trigger attribution
+        installZoneHook();
       });
+
       patchApplicationRef(appRef);
       registerGlobalApplicationRef(appRef);
       setupAutoInstrumentation();
@@ -174,25 +194,17 @@ export function restoreApplicationRef(appRef: ApplicationRef): void {
     candidate.__angularRenderScanPatched = false;
     originalTick = null;
   }
+  resetZoneTracker();
 }
 
 function registerGlobalApplicationRef(appRef: ApplicationRef): void {
   const globalWindow = window as Window & {
     __ANGULAR_RENDER_SCAN_APP_REF__?: ApplicationRef;
-    AngularRenderScan?: {
-      scan: typeof scan;
-      setOptions: typeof setOptions;
-      getAIPrompt: typeof getAIPrompt;
-      copyAIPrompt: typeof copyAIPrompt;
-      getSessionData: () => any;
-      getWastedStats: () => any;
-      getLeakedComponents: () => any;
-      stop: () => void;
-    };
+    AngularRenderScan?: object;
   };
   globalWindow.__ANGULAR_RENDER_SCAN_APP_REF__ = appRef;
   globalWindow.AngularRenderScan = {
-    ...globalWindow.AngularRenderScan,
+    ...(globalWindow.AngularRenderScan as object | undefined),
     scan,
     setOptions,
     getAIPrompt,
@@ -200,6 +212,9 @@ function registerGlobalApplicationRef(appRef: ApplicationRef): void {
     getSessionData,
     getWastedStats,
     getLeakedComponents,
+    getOnPushCandidates,
+    getReferentialInstability,
+    getCdGraph,
     stop: () => {
       import('../../application/runtime').then(m => m.stop());
       restoreApplicationRef(appRef);

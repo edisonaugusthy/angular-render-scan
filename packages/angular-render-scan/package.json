@@ -42,6 +42,10 @@
       "types": "./dist/types/angular-render-scan.d.ts",
       "default": "./dist/fesm2022/angular-render-scan.mjs"
     },
+    "./noop": {
+      "types": "./dist/types/noop.d.ts",
+      "default": "./dist/fesm2022/noop.mjs"
+    },
     "./auto.global": "./dist/auto.global.js"
   },
   "peerDependencies": {

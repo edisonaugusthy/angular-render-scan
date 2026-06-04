@@ -3,6 +3,122 @@ export type AngularRenderReason = 'input' | 'event' | 'tick' | 'dom' | 'unknown'
 export type AngularRenderMutationType = 'none' | 'text' | 'attribute' | 'structural';
 export type AngularRenderScanDarkMode = 'auto' | 'dark' | 'light';
 
+// ─── CD Trigger Attribution ───────────────────────────────────────────────────
+/** The source that caused a change-detection cycle to fire. */
+export type CdTriggerSource =
+  | 'zone:click'
+  | 'zone:input'
+  | 'zone:keydown'
+  | 'zone:keyup'
+  | 'zone:submit'
+  | 'zone:change'
+  | 'zone:focus'
+  | 'zone:blur'
+  | 'zone:scroll'
+  | 'zone:setTimeout'
+  | 'zone:setInterval'
+  | 'zone:xhr'
+  | 'zone:fetch'
+  | 'zone:promise'
+  | 'zone:microtask'
+  | 'zone:macrotask'
+  | 'zone:eventTask'
+  | 'signal:write'
+  | 'manual:markForCheck'
+  | 'manual:detectChanges'
+  | 'router:navigation'
+  | 'zone:unknown'
+  | 'unknown';
+
+export interface CdTriggerAttribution {
+  /** Primary trigger source */
+  source: CdTriggerSource;
+  /** Optional detail: event type, XHR URL, timer ID, etc. */
+  detail?: string;
+  /** Stack frame that triggered the cycle (best-effort) */
+  callSite?: string;
+  /** Whether this cycle was triggered by user interaction */
+  isUserInteraction: boolean;
+  /** Whether this is suspected Zone pollution (async with no user action) */
+  isZonePollution: boolean;
+}
+
+// ─── OnPush Candidate ─────────────────────────────────────────────────────────
+export interface OnPushCandidate {
+  name: string;
+  selector: string;
+  totalChecks: number;
+  wastedChecks: number;
+  wastedPercentage: number;
+  /** Estimated % of total CD time saved by switching to OnPush */
+  estimatedSavingPct: number;
+  confidence: 'high' | 'medium' | 'low';
+  reason: string;
+}
+
+// ─── Referential Input Stability ─────────────────────────────────────────────
+export interface ReferentialInstabilityReport {
+  /** Component name */
+  componentName: string;
+  selector: string;
+  /** Input property name */
+  inputName: string;
+  /** Number of times a new reference was passed but value was deeply equal */
+  unstableRefCount: number;
+  /** Total renders of this component */
+  totalRenders: number;
+  /** Percentage of renders where this input was referentially unstable */
+  unstableRefPct: number;
+  /** Last serialized value */
+  lastValue: string;
+}
+
+// ─── Zone Pollution ───────────────────────────────────────────────────────────
+export interface ZonePollutionEvent {
+  /** When this pollution event was detected */
+  timestamp: number;
+  /** Which async source caused it */
+  source: CdTriggerSource;
+  detail?: string;
+  callSite?: string;
+  /** How many components ran in the polluted cycle */
+  componentCount: number;
+  /** Duration of the polluted cycle in ms */
+  cycleDuration: number;
+}
+
+// ─── CD Graph ─────────────────────────────────────────────────────────────────
+export interface CdGraphNode {
+  id: string;
+  name: string;
+  selector: string;
+  /** parent component id (null = root) */
+  parentId: string | null;
+  depth: number;
+  renderCount: number;
+  totalDuration: number;
+  wastedChecks: number;
+  cdStrategy: 'OnPush' | 'Default' | 'unknown';
+  isOnPushCandidate: boolean;
+  lastTrigger?: CdTriggerSource;
+}
+
+export interface CdGraphEdge {
+  fromId: string;
+  toId: string;
+  /** How many times parent triggered child render */
+  triggerCount: number;
+}
+
+export interface CdGraph {
+  nodes: CdGraphNode[];
+  edges: CdGraphEdge[];
+  /** When this snapshot was taken */
+  capturedAt: number;
+}
+
+// ─── Existing types ───────────────────────────────────────────────────────────
+
 export interface AngularRenderScanTheme {
   fast: readonly [number, number, number];
   medium: readonly [number, number, number];
@@ -32,6 +148,14 @@ export interface AngularRenderEntry {
   wastedChecks: number;
   wastedPercentage: number;
   mutationType?: AngularRenderMutationType;
+  /** NEW: Which input props are referentially unstable */
+  unstableInputs?: ReferentialInstabilityReport[];
+  /** NEW: CD strategy of this component */
+  cdStrategy?: 'OnPush' | 'Default' | 'unknown';
+  /** NEW: Whether this is an OnPush migration candidate */
+  isOnPushCandidate?: boolean;
+  /** NEW: parent component id */
+  parentId?: string | null;
 }
 
 export interface AngularRenderCycle {
@@ -43,6 +167,10 @@ export interface AngularRenderCycle {
   slowest?: AngularRenderEntry;
   entries: AngularRenderEntry[];
   waterfall: WaterfallEntry[];
+  /** NEW: What triggered this CD cycle */
+  trigger?: CdTriggerAttribution;
+  /** NEW: Whether this cycle is suspected Zone pollution */
+  isZonePollution?: boolean;
 }
 
 export interface WaterfallEntry {
@@ -74,6 +202,10 @@ export interface SessionExportData {
   wastedStats: WastedStats;
   budgetViolations: BudgetViolation[];
   leakedComponents: string[];
+  /** NEW */
+  onPushCandidates: OnPushCandidate[];
+  zonePollutionEvents: ZonePollutionEvent[];
+  referentialInstabilityReports: ReferentialInstabilityReport[];
 }
 
 export interface SessionCycleData {
@@ -84,6 +216,8 @@ export interface SessionCycleData {
   renderedCount: number;
   entries: SessionEntryData[];
   waterfall: WaterfallEntry[];
+  trigger?: CdTriggerAttribution;
+  isZonePollution?: boolean;
 }
 
 export interface SessionEntryData {
@@ -99,6 +233,8 @@ export interface SessionEntryData {
   wastedChecks: number;
   wastedPercentage: number;
   mutationType?: AngularRenderMutationType;
+  cdStrategy?: 'OnPush' | 'Default' | 'unknown';
+  isOnPushCandidate?: boolean;
 }
 
 export interface WastedStats {
@@ -129,15 +265,30 @@ export interface AngularRenderScanOptions {
   onRender?: (entry: AngularRenderEntry) => void;
   onCycleFinish?: (cycle: AngularRenderCycle) => void;
   onBudgetViolation?: (violation: BudgetViolation) => void;
+  /** NEW: callback when Zone pollution is detected */
+  onZonePollution?: (event: ZonePollutionEvent) => void;
+  /** NEW: show CD graph panel in toolbar */
+  showCdGraph?: boolean;
+  /** NEW: how many Zone pollution events to retain in session */
+  maxZonePollutionEvents?: number;
+  /** NEW: Only track specific components by name/regex */
+  trackComponents?: Array<string | RegExp>;
+  /** NEW: OnPush candidate minimum wasted render % threshold (0-100) */
+  onPushCandidateThreshold?: number;
+  /** NEW: Enable referential input stability tracking (JSON deep-equal check) */
+  trackReferentialStability?: boolean;
+  /** NEW: Max depth for deep equality check in referential stability */
+  referentialStabilityDepth?: number;
 }
 
-export interface AngularRenderScanResolvedOptions extends Required<Omit<AngularRenderScanOptions, 'onCycleStart' | 'onRender' | 'onCycleFinish' | 'onBudgetViolation' | 'theme'>> {
+export interface AngularRenderScanResolvedOptions extends Required<Omit<AngularRenderScanOptions, 'onCycleStart' | 'onRender' | 'onCycleFinish' | 'onBudgetViolation' | 'onZonePollution' | 'theme'>> {
   theme: AngularRenderScanTheme;
   budgets: Required<AngularRenderScanBudgets>;
   onCycleStart?: () => void;
   onRender?: (entry: AngularRenderEntry) => void;
   onCycleFinish?: (cycle: AngularRenderCycle) => void;
   onBudgetViolation?: (violation: BudgetViolation) => void;
+  onZonePollution?: (event: ZonePollutionEvent) => void;
 }
 
 export interface AngularRenderScanRegisteredComponent {
@@ -145,16 +296,24 @@ export interface AngularRenderScanRegisteredComponent {
   name: string;
   element: Element;
   selector?: string;
+  /** NEW */
+  cdStrategy?: 'OnPush' | 'Default' | 'unknown';
+  /** NEW */
+  parentId?: string | null;
 }
 
 export interface AngularRenderChangedInput {
   name: string;
   previous: string;
   current: string;
+  /** NEW: true when reference changed but value is deeply equal */
+  isReferentiallyUnstable?: boolean;
 }
 
 export interface AngularRenderScanRenderDetails {
   reason?: AngularRenderReason;
   changedInputs?: AngularRenderChangedInput[];
   mutationType?: AngularRenderMutationType;
+  /** NEW */
+  parentId?: string | null;
 }

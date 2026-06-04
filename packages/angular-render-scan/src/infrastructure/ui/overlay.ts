@@ -1,7 +1,26 @@
 import { FpsMeter } from './fps';
 import { CpuMeter } from './cpu';
-import { clearRecording, copyAIPrompt, getRecording, getSessionData, getWastedStats, getLeakedComponents } from '../../application/runtime';
-import type { AngularRenderCycle, AngularRenderEntry, AngularRenderScanResolvedOptions, BudgetViolation } from '../../domain/entities';
+import {
+  clearRecording,
+  copyAIPrompt,
+  getRecording,
+  getSessionData,
+  getWastedStats,
+  getLeakedComponents,
+  getOnPushCandidates,
+  getReferentialInstability,
+  getZonePollutionEvents,
+  getCdGraph
+} from '../../application/runtime';
+import type {
+  AngularRenderCycle,
+  AngularRenderEntry,
+  AngularRenderScanResolvedOptions,
+  BudgetViolation,
+  OnPushCandidate,
+  ZonePollutionEvent,
+  CdTriggerAttribution
+} from '../../domain/entities';
 
 interface ActiveHighlight {
   entry: AngularRenderEntry;
@@ -366,20 +385,22 @@ const TOOLBAR_CSS = `
     right: 16px;
     bottom: 72px;
     z-index: 2147483647;
-    width: min(300px, calc(100vw - 32px));
+    width: min(280px, calc(100vw - 32px));
     display: grid;
-    gap: 8px;
-    padding: 12px;
+    gap: 6px;
+    padding: 10px;
     border: 1px solid var(--ars-border);
-    border-top: 4px solid #3b82f6;
-    border-radius: 12px;
+    border-top: 3px solid #3b82f6;
+    border-radius: 10px;
     background: var(--ars-panel-bg);
     box-shadow: var(--ars-shadow);
     color: var(--ars-color);
-    font: 500 11px/1.3 Inter, system-ui, -apple-system, sans-serif;
+    font: 500 10px/1.3 Inter, system-ui, -apple-system, sans-serif;
     pointer-events: auto;
     backdrop-filter: blur(16px);
     transition: border-top-color 0.2s ease;
+    max-height: calc(100vh - 100px);
+    overflow-y: auto;
   }
   .inspect-panel.slow { border-top-color: #ef4444; }
   .inspect-panel.medium { border-top-color: #f59e0b; }
@@ -559,6 +580,14 @@ export class AngularRenderScanOverlay {
   private dragStartX = 0;
   private dragStartY = 0;
 
+  // New feature state
+  private showOnPushPanel = false;
+  private showZonePollutionPanel = false;
+  private showGraphPanel = false;
+  private graphCollapsed = false;
+  private lastTrigger?: CdTriggerAttribution;
+  private zonePollutionListener?: (e: Event) => void;
+
   private get slowThresholdMs(): number {
     return this.options.budgets?.warnMs ?? 10;
   }
@@ -607,6 +636,13 @@ export class AngularRenderScanOverlay {
     };
     window.addEventListener('angular-render-scan:budget-violation', this.budgetViolationListener);
 
+    // Setup Zone pollution event listener
+    this.zonePollutionListener = (_e: Event) => {
+      // Just trigger a toolbar re-render to update the pollution badge count
+      this.renderToolbar();
+    };
+    window.addEventListener('angular-render-scan:zone-pollution', this.zonePollutionListener);
+
     // Setup keyboard shortcuts
     this.keyListener = (e: KeyboardEvent) => {
       if (e.altKey && e.shiftKey) {
@@ -646,11 +682,13 @@ export class AngularRenderScanOverlay {
           this.renderToolbar();
         }
       } else if (e.key === 'Escape') {
-        if (this.selectedEntry || this.showCpuDetails || this.showWaterfallPanel || this.showAlertsPanel) {
+        if (this.selectedEntry || this.showCpuDetails || this.showWaterfallPanel || this.showAlertsPanel || this.showOnPushPanel || this.showZonePollutionPanel) {
           this.selectedEntry = undefined;
           this.showCpuDetails = false;
           this.showWaterfallPanel = false;
           this.showAlertsPanel = false;
+          this.showOnPushPanel = false;
+          this.showZonePollutionPanel = false;
           this.renderToolbar();
         }
       }
@@ -767,7 +805,10 @@ export class AngularRenderScanOverlay {
 
   showCycle(cycle: AngularRenderCycle): void {
     this.latestCycle = cycle;
-    
+    if (cycle.trigger) {
+      this.lastTrigger = cycle.trigger;
+    }
+
     // Track sparkline durations
     this.last30CycleDurations.push({
       duration: cycle.duration,
@@ -803,6 +844,9 @@ export class AngularRenderScanOverlay {
     }
     if (this.budgetViolationListener) {
       window.removeEventListener('angular-render-scan:budget-violation', this.budgetViolationListener);
+    }
+    if (this.zonePollutionListener) {
+      window.removeEventListener('angular-render-scan:zone-pollution', this.zonePollutionListener);
     }
     window.clearTimeout(this.copyStatusTimer);
     this.host.remove();
@@ -948,60 +992,87 @@ export class AngularRenderScanOverlay {
   }
 
   private drawOutline(rect: DOMRect, alpha: number, entry: AngularRenderEntry): void {
-    if (!this.context) {
-      return;
-    }
-
+    if (!this.context) return;
+    const ctx = this.context;
     const strokeColor = this.getStrokeColorForMutation(entry);
-    const glowColor = strokeColor;
+    const r = 3; // corner radius
 
-    this.context.shadowColor = rgba(glowColor, Math.min(0.45, alpha));
-    this.context.shadowBlur = 16;
-    this.context.strokeStyle = rgba(strokeColor, alpha);
-    this.context.lineWidth = 2;
-    this.context.strokeRect(rect.left, rect.top, rect.width, rect.height);
-    this.context.shadowBlur = 0;
+    ctx.save();
+    // Subtle fill tint
+    ctx.fillStyle = rgba(strokeColor, Math.min(0.06, alpha * 0.08));
+    ctx.beginPath();
+    ctx.roundRect(rect.left, rect.top, rect.width, rect.height, r);
+    ctx.fill();
+    // Clean sharp stroke — no glow, just a crisp colored border
+    ctx.strokeStyle = rgba(strokeColor, Math.min(0.85, alpha));
+    ctx.lineWidth = 1.5;
+    ctx.shadowBlur = 0;
+    ctx.beginPath();
+    ctx.roundRect(rect.left, rect.top, rect.width, rect.height, r);
+    ctx.stroke();
+    ctx.restore();
   }
 
   private drawHoverTarget(rect: DOMRect, entry: AngularRenderEntry): void {
-    if (!this.context) {
-      return;
-    }
-
+    if (!this.context) return;
+    const ctx = this.context;
     const color = this.getStrokeColorForMutation(entry);
-    this.context.save();
-    this.context.strokeStyle = rgba(color, 0.95);
-    this.context.lineWidth = 3;
-    this.context.setLineDash([2, 4]);
-    this.context.strokeRect(rect.left, rect.top, rect.width, rect.height);
-    this.context.restore();
+    ctx.save();
+    // Solid highlight fill
+    ctx.fillStyle = rgba(color, 0.07);
+    ctx.beginPath();
+    ctx.roundRect(rect.left, rect.top, rect.width, rect.height, 3);
+    ctx.fill();
+    // Dashed border
+    ctx.strokeStyle = rgba(color, 0.9);
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.roundRect(rect.left, rect.top, rect.width, rect.height, 3);
+    ctx.stroke();
+    ctx.restore();
   }
 
-  private drawLabel(entry: AngularRenderEntry, rect: DOMRect, alpha: number, duration: number): void {
-    if (!this.context) {
-      return;
-    }
+  private drawLabel(entry: AngularRenderEntry, rect: DOMRect, alpha: number, _duration: number): void {
+    if (!this.context) return;
+    const ctx = this.context;
 
     const maxDuration = Math.max(entry.latestDuration, entry.averageDuration);
-    let bgColor = this.getColorForDuration(maxDuration, 'bg');
-    if (entry.element && !entry.element.isConnected) {
-      bgColor = this.options.theme.labelBackgroundSlow!; // Red for leaked component labels
-    }
+    const strokeColor = this.getStrokeColorForMutation(entry);
+    const isLeak = entry.element && !entry.element.isConnected;
 
-    this.context.fillStyle = rgba(bgColor, Math.min(0.9, alpha + 0.1));
-    this.context.font = '600 11px ui-sans-serif, system-ui, sans-serif';
-    const maxLabelWidth = Math.max(56, Math.min(rect.width, window.innerWidth - rect.left - 8));
+    ctx.save();
+    ctx.font = '600 10px ui-sans-serif, system-ui, sans-serif';
+
+    // Build pill text: "ComponentName · 12ms · ×4"
+    const durationText = `${entry.latestDuration.toFixed(1)}ms`;
     const label = truncateText(
-      this.context,
-      `${entry.name}  #${entry.count}  ${entry.latestDuration.toFixed(1)}ms`,
-      maxLabelWidth - 10
+      ctx,
+      `${entry.name} · ${durationText} · ×${entry.count}`,
+      Math.max(56, Math.min(rect.width - 4, 200))
     );
-    const labelWidth = Math.min(this.context.measureText(label).width + 14, maxLabelWidth);
-    const labelX = Math.max(4, Math.min(rect.left + 4, window.innerWidth - labelWidth - 4));
-    const labelY = Math.max(6, rect.top + 4);
-    this.context.fillRect(labelX, labelY, labelWidth, 18);
-    this.context.fillStyle = '#ffffff';
-    this.context.fillText(label, labelX + 7, labelY + 13, labelWidth - 10);
+
+    const textW = ctx.measureText(label).width;
+    const pillW = textW + 14;
+    const pillH = 17;
+    const pillR = 4;
+    const pillX = Math.max(4, Math.min(rect.left + 4, window.innerWidth - pillW - 4));
+    const pillY = Math.max(4, rect.top + 4);
+
+    // Pill background — use stroke color with opacity
+    const pillAlpha = Math.min(0.92, alpha + 0.15);
+    ctx.fillStyle = isLeak
+      ? `rgba(239,68,68,${pillAlpha})`
+      : rgba(strokeColor, pillAlpha);
+
+    ctx.beginPath();
+    ctx.roundRect(pillX, pillY, pillW, pillH, pillR);
+    ctx.fill();
+
+    // Pill text — white
+    ctx.fillStyle = `rgba(255,255,255,${Math.min(1, alpha + 0.3)})`;
+    ctx.fillText(label, pillX + 7, pillY + pillH - 4, pillW - 10);
+    ctx.restore();
   }
 
   private renderToolbar(): void {
@@ -1022,6 +1093,8 @@ export class AngularRenderScanOverlay {
 
     const wasted = getWastedStats();
     const leaks = getLeakedComponents();
+    const onPushCandidates = getOnPushCandidates();
+    const pollutionEvents = getZonePollutionEvents();
 
     // Generate timeline sparkline SVG
     let sparklineSvg = '';
@@ -1047,7 +1120,7 @@ export class AngularRenderScanOverlay {
     // Leaks metric chip
     const leaksChip = leaks.length > 0
       ? `<span class="metric leak-toggle" style="cursor: pointer;" data-tooltip="Memory Leak Warning: detected ${leaks.length} components whose elements were disconnected but not destroyed. Click to inspect first leak.">
-          <span class="label" style="color: #ef4444;">Leaks</span>
+          <span class="label" style="color: #ef4444;">Memory leaks</span>
           <span class="value" style="color: #ef4444; font-weight: bold; text-decoration: underline;">${leaks.length}</span>
         </span>`
       : '';
@@ -1056,10 +1129,31 @@ export class AngularRenderScanOverlay {
     const hasError = this.budgetViolations.some((v) => v.type === 'error' || v.type === 'render-rate');
     const alertsChip = this.budgetViolations.length > 0
       ? `<span class="metric alerts-toggle ${this.showAlertsPanel ? 'active' : ''}" style="cursor: pointer; position: relative;" data-tooltip="Performance Budget Violations: detected ${this.budgetViolations.length} violations. Click to toggle alerts feed.">
-          <span class="label" style="color: ${hasError ? '#ef4444' : '#f59e0b'}; font-weight: bold;">Alerts</span>
+          <span class="label" style="color: ${hasError ? '#ef4444' : '#f59e0b'}; font-weight: bold;">Budget alerts</span>
           <span class="value" style="color: ${hasError ? '#ef4444' : '#f59e0b'}; font-weight: bold; text-decoration: underline;">
             ⚠️ ${this.budgetViolations.length}
           </span>
+        </span>`
+      : '';
+
+    // CD Trigger badge
+    const triggerBadge = this.lastTrigger
+      ? this.triggerBadgeHtml(this.lastTrigger)
+      : '';
+
+    // OnPush candidates chip
+    const onPushChip = onPushCandidates.length > 0
+      ? `<span class="metric onpush-toggle" style="cursor: pointer;" data-tooltip="OnPush Candidates: ${onPushCandidates.length} component(s) using Default CD could save renders by switching to OnPush. Click to view.">
+          <span class="label" style="color: #7c3aed;">OnPush savings</span>
+          <span class="value" style="color: #7c3aed; font-weight: bold; text-decoration: underline;">⚡ ${onPushCandidates.length}</span>
+        </span>`
+      : '';
+
+    // Zone pollution chip
+    const pollutionChip = pollutionEvents.length > 0
+      ? `<span class="metric pollution-toggle" style="cursor: pointer;" data-tooltip="Zone Pollution: ${pollutionEvents.length} CD cycles were triggered by async operations with no user interaction. Click to inspect.">
+          <span class="label" style="color: #f59e0b;">Zone pollution</span>
+          <span class="value" style="color: #f59e0b; font-weight: bold; text-decoration: underline;">⚠ ${pollutionEvents.length}</span>
         </span>`
       : '';
 
@@ -1068,23 +1162,33 @@ export class AngularRenderScanOverlay {
       ${this.cpuDetailsHtml()}
       ${this.waterfallPanelHtml()}
       ${this.alertsPanelHtml()}
+      ${this.onPushPanelHtml(onPushCandidates)}
+      ${this.zonePollutionPanelHtml(pollutionEvents)}
+      ${this.cdGraphPanelHtml()}
       <div class="toolbar" style="right: ${this.toolbarX}px; bottom: ${this.toolbarY}px;">
         <label class="switch">
           <input type="checkbox" ${this.options.enabled ? 'checked' : ''} aria-label="Angular Render Scan enabled" />
           <span class="track" aria-hidden="true"></span>
           <span class="switch-text">${this.options.enabled ? 'On' : 'Off'}</span>
         </label>
-        ${this.metric('FPS', this.options.showFPS ? String(displayedFps) : '-', this.getFpsClass(displayedFps))}
-        <span class="metric cpu-interactive ${this.showCpuDetails ? 'active' : ''}" data-tooltip="Click to toggle detailed CPU / Main Thread metrics">
-          <span class="label">CPU</span>
+        ${this.metric('Frame rate', this.options.showFPS ? String(displayedFps) + ' fps' : '-', this.getFpsClass(displayedFps))}
+        <span class="metric cpu-interactive ${this.showCpuDetails ? 'active' : ''}" data-tooltip="Main-thread busy %. High values mean JS is blocking the render pipeline. Click for details.">
+          <span class="label">CPU busy</span>
           <span class="value ${cpuClass}">${cpuVal}%</span>
         </span>
         ${sparklineSvg}
-        ${this.metric('Cycle', cycle ? `${cycle.duration.toFixed(1)}ms` : '-')}
-        ${this.metric('Wasted', `${wasted.wastedChecks} (${wasted.wastedPercentage}%)`, wasted.wastedChecks > 0 ? 'cpu-medium' : '')}
+        ${this.metric('Last cycle', cycle ? `${cycle.duration.toFixed(1)}ms` : '-')}
+        ${triggerBadge}
+        ${this.metric('Wasted renders', `${wasted.wastedChecks} (${wasted.wastedPercentage}%)`, wasted.wastedChecks > 0 ? 'cpu-medium' : '')}
         ${leaksChip}
         ${alertsChip}
-        ${this.metric('Slowest', cycle?.slowest ? cycle.slowest.name : '-', '', 'slowest-metric')}
+        ${onPushChip}
+        ${pollutionChip}
+        <span class="metric graph-toggle ${this.showGraphPanel ? 'active' : ''}" style="cursor:pointer;" data-tooltip="Live CD render graph — shows how change detection propagates through the component tree. Click to toggle.">
+          <span class="label">CD Graph</span>
+          <span class="value" style="color:#06b6d4;">⬡</span>
+        </span>
+        ${this.metric('Slowest component', cycle?.slowest ? cycle.slowest.name : '-', '', 'slowest-metric')}
         <span class="toolbar-actions">
           <label class="details-toggle ${this.detailsMode ? 'active' : ''}" data-tooltip="Check Details, hover a captured component to highlight it, then click to pin its recommendation panel. Uncheck to clear the panel.">
             <input class="details-checkbox" type="checkbox" ${this.detailsMode ? 'checked' : ''} aria-label="Enable component details panel" />
@@ -1228,6 +1332,46 @@ export class AngularRenderScanOverlay {
       this.showAlertsPanel = false;
       this.renderToolbar();
     }, { once: true });
+
+    toolbarEl?.querySelector('.onpush-toggle')?.addEventListener('click', () => {
+      this.showOnPushPanel = !this.showOnPushPanel;
+      this.renderToolbar();
+    }, { once: true });
+
+    toolbarEl?.querySelector('.pollution-toggle')?.addEventListener('click', () => {
+      this.showZonePollutionPanel = !this.showZonePollutionPanel;
+      this.renderToolbar();
+    }, { once: true });
+
+    container.querySelector('.onpush-close-btn')?.addEventListener('click', () => {
+      this.showOnPushPanel = false;
+      this.renderToolbar();
+    }, { once: true });
+
+    container.querySelector('.zone-pollution-close-btn')?.addEventListener('click', () => {
+      this.showZonePollutionPanel = false;
+      this.renderToolbar();
+    }, { once: true });
+
+    toolbarEl?.querySelector('.graph-toggle')?.addEventListener('click', () => {
+      this.showGraphPanel = !this.showGraphPanel;
+      this.graphCollapsed = false;
+      this.renderToolbar();
+    }, { once: true });
+
+    container.querySelector('.graph-close-btn')?.addEventListener('click', () => {
+      this.showGraphPanel = false;
+      this.renderToolbar();
+    }, { once: true });
+
+    container.querySelector('.graph-collapse-btn')?.addEventListener('click', () => {
+      this.graphCollapsed = !this.graphCollapsed;
+      this.renderToolbar();
+    }, { once: true });
+
+    container.querySelector('.graph-refresh-btn')?.addEventListener('click', () => {
+      this.renderToolbar();
+    }, { once: true });
   }
 
   private metric(label: string, value: string, extraClass = '', containerClass = ''): string {
@@ -1268,7 +1412,12 @@ export class AngularRenderScanOverlay {
     const cost = this.costFor(entry);
     const recommendations = this.recommendationsFor(entry);
     const changedInputs = entry.changedInputs?.length
-      ? entry.changedInputs.map((input) => `${escapeHtml(input.name)}: ${escapeHtml(input.previous)} -> ${escapeHtml(input.current)}`).join('<br>')
+      ? entry.changedInputs.map((input) => {
+          const unstableTag = input.isReferentiallyUnstable
+            ? ` <span style="color: #f59e0b; font-size: 8px; background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); padding: 1px 4px; border-radius: 3px;">UNSTABLE REF</span>`
+            : '';
+          return `${escapeHtml(input.name)}: ${escapeHtml(input.previous)} → ${escapeHtml(input.current)}${unstableTag}`;
+        }).join('<br>')
       : '-';
 
     const openInEditorUrl = this.getEditorUrl(entry);
@@ -1287,7 +1436,7 @@ export class AngularRenderScanOverlay {
       : '';
 
     return `
-      <section class="inspect-panel ${severity.kind}" style="right: ${this.toolbarX}px; bottom: ${this.toolbarY + 60}px;" aria-label="Component recommendation panel">
+      <section class="inspect-panel ${severity.kind}" style="right: ${this.toolbarX}px; bottom: ${this.toolbarY + 60}px; max-width: 300px;" aria-label="Component recommendation panel">
         ${leakWarningHtml}
         <div class="panel-head">
           <div>
@@ -1301,39 +1450,44 @@ export class AngularRenderScanOverlay {
           </div>
         </div>
         <div class="panel-grid">
-          ${this.panelField('Latest', `${entry.latestDuration.toFixed(1)}ms`)}
-          ${this.panelField('Average', `${entry.averageDuration.toFixed(1)}ms`)}
-          ${this.panelField('Count', String(entry.count))}
-          ${this.panelField('Reason', entry.reason ?? 'unknown')}
-          ${this.panelField('Selector', entry.selector ?? '-')}
-          ${this.panelField('Cycle', `#${entry.latestCycleId}`)}
+          ${this.panelField('Last render', `${entry.latestDuration.toFixed(1)}ms`)}
+          ${this.panelField('Avg render', `${entry.averageDuration.toFixed(1)}ms`)}
+          ${this.panelField('Total renders', String(entry.count))}
+          ${this.panelField('Trigger reason', entry.reason ?? 'unknown')}
+          ${this.panelField('Change detection', entry.cdStrategy ?? 'unknown')}
+          ${this.panelField('Cycle #', String(entry.latestCycleId))}
         </div>
+        ${entry.isOnPushCandidate ? `
+        <div style="background: rgba(124, 58, 237, 0.08); border: 1px solid rgba(124, 58, 237, 0.2); border-radius: 6px; padding: 6px 10px; font-size: 9px; line-height: 1.4; color: #7c3aed; display: flex; gap: 6px; align-items: flex-start; margin-bottom: 2px;">
+          <span style="font-size: 12px; flex-shrink: 0;">⚡</span>
+          <span><strong>OnPush candidate:</strong> This component has ${entry.wastedPercentage}% wasted renders and uses Default CD. Adding <code style="background: rgba(0,0,0,0.06); padding: 1px 3px; border-radius: 2px;">ChangeDetectionStrategy.OnPush</code> could eliminate most unnecessary checks.</span>
+        </div>` : ''}
         <div class="panel-field">
-          <span class="panel-label">Wasted Renders</span>
+          <span class="panel-label">Skipped renders (no-ops)</span>
           <span class="panel-value">
-            ${entry.wastedChecks} of ${entry.count} checks were no-ops (${entry.wastedPercentage}% wasted)
-            <div style="width: 100%; height: 4px; background: #e2e8f0; border-radius: 2px; overflow: hidden; margin-top: 4px;">
-              <div style="width: ${entry.wastedPercentage}%; height: 100%; background: #10b981;"></div>
+            ${entry.wastedChecks} of ${entry.count} were skipped — ${entry.wastedPercentage}% waste
+            <div style="width: 100%; height: 3px; background: #e2e8f0; border-radius: 2px; overflow: hidden; margin-top: 3px;">
+              <div style="width: ${entry.wastedPercentage}%; height: 100%; background: ${entry.wastedPercentage > 60 ? '#ef4444' : '#10b981'};"></div>
             </div>
           </span>
         </div>
         <div class="panel-field">
-          <span class="panel-label">DOM Mutation Type</span>
+          <span class="panel-label">DOM change type</span>
           <span class="panel-value" style="text-transform: capitalize;">${escapeHtml(entry.mutationType ?? 'none')}</span>
         </div>
         <div class="panel-field">
-          <span class="panel-label">Estimated cost</span>
+          <span class="panel-label">Render cost estimate</span>
           <span class="panel-value">${escapeHtml(cost)}</span>
         </div>
-        <div class="panel-field">
-          <span class="panel-label">Changed inputs</span>
+        ${entry.changedInputs?.length ? `<div class="panel-field">
+          <span class="panel-label">Inputs that changed</span>
           <span class="panel-value">${changedInputs}</span>
-        </div>
-        <div class="panel-field">
-          <span class="panel-label">Recent cycles</span>
-          <span class="panel-value">${recentCycles.length > 0 ? escapeHtml(recentCycles.join(', ')) : '-'}</span>
-        </div>
-        <div class="panel-field">
+        </div>` : ''}
+        ${recentCycles.length > 0 ? `<div class="panel-field">
+          <span class="panel-label">Last 5 cycle durations</span>
+          <span class="panel-value">${escapeHtml(recentCycles.join(' · '))}</span>
+        </div>` : ''}
+        ${recommendations.length > 0 ? `<div class="panel-field">
           <span class="panel-label">Recommendations</span>
           <span class="panel-list">
             ${recommendations.map((rec) => `
@@ -1343,7 +1497,7 @@ export class AngularRenderScanOverlay {
               </div>
             `).join('')}
           </span>
-        </div>
+        </div>` : ''}
       </section>
     `;
   }
@@ -1466,6 +1620,25 @@ export class AngularRenderScanOverlay {
         severity: 'fast'
       });
     }
+    // OnPush candidate recommendation
+    if (entry.isOnPushCandidate) {
+      recommendations.push({
+        category: 'OnPush Candidate',
+        action: `${entry.wastedPercentage}% of this component's renders are no-ops. Add ChangeDetectionStrategy.OnPush to prevent unnecessary checks triggered by parent CD cycles.`,
+        severity: 'medium'
+      });
+    }
+
+    // Referential instability recommendation
+    const unstableInputs = entry.changedInputs?.filter(i => i.isReferentiallyUnstable) ?? [];
+    if (unstableInputs.length > 0) {
+      recommendations.push({
+        category: 'Referential Instability',
+        action: `Input(s) [${unstableInputs.map(i => i.name).join(', ')}] received new object references with the same value. Use stable factories, pure pipes, or signals to avoid reference churn that bypasses OnPush.`,
+        severity: 'medium'
+      });
+    }
+
     if (recommendations.length === 0) {
       recommendations.push({
         category: 'Optimal Performance',
@@ -1566,6 +1739,105 @@ export class AngularRenderScanOverlay {
     return `${protocol}://search?query=${query}`;
   }
 
+  private triggerBadgeHtml(trigger: CdTriggerAttribution): string {
+    const isUserInteraction = trigger.isUserInteraction;
+    const isPollution = trigger.isZonePollution;
+    const color = isPollution ? '#f59e0b' : isUserInteraction ? '#10b981' : '#94a3b8';
+    const icon = isPollution ? '⚠' : isUserInteraction ? '●' : '○';
+    const label = trigger.source.replace('zone:', '').replace('manual:', '').replace('signal:', 'signal').replace('router:', 'nav');
+    const tooltip = `Last CD trigger: ${trigger.source}${trigger.detail ? ` (${trigger.detail})` : ''}${isPollution ? ' — Zone pollution suspected' : ''}`;
+    return `
+      <span class="metric" data-tooltip="${escapeHtml(tooltip)}" style="min-width: 64px;">
+        <span class="label">CD trigger</span>
+        <span class="value" style="color: ${color}; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80px; display: block;">
+          ${icon} ${escapeHtml(label)}
+        </span>
+      </span>
+    `;
+  }
+
+  private onPushPanelHtml(candidates: OnPushCandidate[]): string {
+    if (!this.showOnPushPanel || candidates.length === 0) return '';
+    const panelRight = this.toolbarX;
+    const items = candidates.slice(0, 10).map(c => {
+      const confColor = c.confidence === 'high' ? '#10b981' : c.confidence === 'medium' ? '#f59e0b' : '#94a3b8';
+      const confLabel = c.confidence === 'high' ? 'HIGH' : c.confidence === 'medium' ? 'MED' : 'LOW';
+      return `
+        <div style="padding: 8px; border-radius: 6px; border: 1px solid var(--ars-border); background: var(--ars-card-bg); display: flex; flex-direction: column; gap: 4px; font-size: 10px;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
+            <div>
+              <div style="font-weight: 800; color: var(--ars-color); overflow-wrap: anywhere;">${escapeHtml(c.name)}</div>
+              <div style="font-size: 8px; color: var(--ars-label); margin-top: 1px;">${escapeHtml(c.selector)}</div>
+            </div>
+            <span style="font-size: 8px; font-weight: 800; color: ${confColor}; border: 1px solid ${confColor}; padding: 1px 4px; border-radius: 4px; white-space: nowrap; flex-shrink: 0;">${confLabel}</span>
+          </div>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <span style="color: #ef4444; font-weight: 700;">${c.wastedPercentage}% wasted</span>
+            <span style="color: var(--ars-label);">→</span>
+            <span style="color: #10b981; font-weight: 700;">~${c.estimatedSavingPct}% saving</span>
+          </div>
+          <div style="color: var(--ars-label); line-height: 1.35; font-size: 9px;">${escapeHtml(c.reason)}</div>
+          <div style="width: 100%; height: 3px; background: #e2e8f0; border-radius: 2px; overflow: hidden; margin-top: 2px;">
+            <div style="width: ${c.wastedPercentage}%; height: 100%; background: #ef4444; opacity: 0.6;"></div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="onpush-panel" style="position: fixed; right: ${panelRight}px; bottom: ${this.toolbarY + 60}px; width: 280px; max-height: 360px; display: flex; flex-direction: column; gap: 8px; background: var(--ars-panel-bg); border: 1px solid var(--ars-border); border-top: 4px solid #7c3aed; border-radius: 12px; padding: 12px; z-index: 2147483647; box-shadow: var(--ars-shadow); pointer-events: auto; backdrop-filter: blur(16px);">
+        <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--ars-color); border-bottom: 1px solid var(--ars-border); padding-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+          <span>⚡ OnPush Candidates</span>
+          <button class="onpush-close-btn" style="background: none; border: none; color: var(--ars-label); cursor: pointer; font-size: 14px; font-weight: bold; line-height: 1;">×</button>
+        </div>
+        <div style="font-size: 9px; color: var(--ars-label); line-height: 1.4; padding-bottom: 4px;">
+          These components use Default CD with high wasted render rates. Adding <code style="background: rgba(0,0,0,0.06); padding: 1px 3px; border-radius: 3px;">ChangeDetectionStrategy.OnPush</code> could significantly reduce unnecessary checks.
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; overflow-y: auto; flex: 1;">
+          ${items}
+        </div>
+      </div>
+    `;
+  }
+
+  private zonePollutionPanelHtml(events: ZonePollutionEvent[]): string {
+    if (!this.showZonePollutionPanel || events.length === 0) return '';
+    const panelRight = this.showOnPushPanel ? this.toolbarX + 298 : this.toolbarX;
+    const items = events.slice().reverse().slice(0, 15).map(e => {
+      const timeStr = new Date(e.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const sourceLabel = e.source.replace('zone:', '').replace('manual:', '').replace('signal:', 'signal');
+      return `
+        <div style="padding: 8px; border-radius: 6px; border: 1px solid var(--ars-border); background: var(--ars-card-bg); display: flex; flex-direction: column; gap: 4px; font-size: 10px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-weight: 800; color: #f59e0b; font-size: 9px; text-transform: uppercase; background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); padding: 1px 5px; border-radius: 4px;">${escapeHtml(sourceLabel)}</span>
+            <span style="color: var(--ars-label); font-size: 8px;">${timeStr}</span>
+          </div>
+          ${e.detail ? `<div style="color: var(--ars-label); font-size: 9px; overflow-wrap: anywhere;">${escapeHtml(e.detail)}</div>` : ''}
+          <div style="display: flex; gap: 8px; color: var(--ars-label);">
+            <span>${e.componentCount} components</span>
+            <span style="color: ${e.cycleDuration > 10 ? '#ef4444' : '#94a3b8'};">${e.cycleDuration.toFixed(1)}ms</span>
+          </div>
+          ${e.callSite ? `<div style="font-size: 8px; color: var(--ars-label); opacity: 0.7; overflow-wrap: anywhere; font-family: monospace;">${escapeHtml(e.callSite)}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="zone-pollution-panel" style="position: fixed; right: ${panelRight}px; bottom: ${this.toolbarY + 60}px; width: 270px; max-height: 360px; display: flex; flex-direction: column; gap: 8px; background: var(--ars-panel-bg); border: 1px solid var(--ars-border); border-top: 4px solid #f59e0b; border-radius: 12px; padding: 12px; z-index: 2147483647; box-shadow: var(--ars-shadow); pointer-events: auto; backdrop-filter: blur(16px);">
+        <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--ars-color); border-bottom: 1px solid var(--ars-border); padding-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+          <span>⚠ Zone Pollution</span>
+          <button class="zone-pollution-close-btn" style="background: none; border: none; color: var(--ars-label); cursor: pointer; font-size: 14px; font-weight: bold; line-height: 1;">×</button>
+        </div>
+        <div style="font-size: 9px; color: var(--ars-label); line-height: 1.4; padding-bottom: 4px;">
+          These CD cycles were triggered by async operations with no user interaction — suspected Zone.js pollution. Use <code style="background: rgba(0,0,0,0.06); padding: 1px 3px; border-radius: 3px;">NgZone.runOutsideAngular()</code> to escape Zone.
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; overflow-y: auto; flex: 1;">
+          ${items}
+        </div>
+      </div>
+    `;
+  }
+
   private addBudgetViolation(violation: BudgetViolation): void {
     if (this.budgetViolations.some(v => v.componentName === violation.componentName && v.timestamp === violation.timestamp && v.type === violation.type)) {
       return;
@@ -1592,6 +1864,80 @@ export class AngularRenderScanOverlay {
     } else {
       this.host.classList.remove('dark');
     }
+  }
+
+  private cdGraphPanelHtml(): string {
+    if (!this.showGraphPanel) return '';
+    const graph = getCdGraph();
+    const nodes = graph.nodes;
+    const panelRight = this.toolbarX;
+
+    // Build child map for tree rendering
+    const childMap = new Map<string | null, typeof nodes>();
+    for (const n of nodes) {
+      const pid = n.parentId ?? null;
+      if (!childMap.has(pid)) childMap.set(pid, []);
+      childMap.get(pid)!.push(n);
+    }
+
+    const renderNode = (node: (typeof nodes)[0], depth: number): string => {
+      const children = childMap.get(node.id) ?? [];
+      const stratColor = node.cdStrategy === 'OnPush' ? '#10b981' : '#f59e0b';
+      const countColor = node.wastedChecks > 0 ? '#ef4444' : '#94a3b8';
+      const indent = depth * 12;
+      const childRows = children.map(c => renderNode(c, depth + 1)).join('');
+      const edgeCount = graph.edges.find(e => e.toId === node.id)?.triggerCount ?? 0;
+      return `
+        <div style="display:flex;flex-direction:column;">
+          <div style="display:flex;align-items:center;gap:5px;padding:3px 6px 3px ${indent + 6}px;border-radius:4px;transition:background .1s;" onmouseover="this.style.background='rgba(0,0,0,.04)'" onmouseout="this.style.background=''">
+            ${depth > 0 ? `<span style="color:#cbd5e1;font-size:9px;flex-shrink:0;">↳</span>` : ''}
+            <span style="font-size:10px;font-weight:600;color:var(--ars-color);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(node.name)}">${escapeHtml(node.name)}</span>
+            ${edgeCount > 0 ? `<span style="font-size:8px;color:#94a3b8;flex-shrink:0;">${edgeCount}×</span>` : ''}
+            <span style="font-size:8px;font-weight:700;color:${stratColor};flex-shrink:0;border:1px solid ${stratColor};padding:0 3px;border-radius:3px;">${node.cdStrategy === 'OnPush' ? 'OP' : 'D'}</span>
+            <span style="font-size:9px;font-family:monospace;color:${countColor};flex-shrink:0;">${node.renderCount}r${node.wastedChecks > 0 ? ` ${node.wastedChecks}w` : ''}</span>
+          </div>
+          ${childRows}
+        </div>
+      `;
+    };
+
+    const roots = childMap.get(null) ?? nodes.filter(n => !n.parentId);
+    const treeHtml = this.graphCollapsed ? '' : (roots.length > 0
+      ? roots.map(n => renderNode(n, 0)).join('')
+      : `<div style="padding:12px;text-align:center;font-size:10px;color:var(--ars-label);">No component data yet — interact with the app.</div>`);
+
+    const onPushCount = nodes.filter(n => n.cdStrategy === 'OnPush').length;
+    const defaultCount = nodes.filter(n => n.cdStrategy !== 'OnPush').length;
+    const wastedTotal = nodes.reduce((s, n) => s + n.wastedChecks, 0);
+
+    return `
+      <div class="cd-graph-panel" style="position:fixed;right:${this.toolbarX}px;bottom:${this.toolbarY + 60}px;width:280px;max-height:${this.graphCollapsed ? 'auto' : '400px'};display:flex;flex-direction:column;background:var(--ars-panel-bg);border:1px solid var(--ars-border);border-top:3px solid #06b6d4;border-radius:10px;z-index:2147483647;box-shadow:var(--ars-shadow);pointer-events:auto;backdrop-filter:blur(16px);overflow:hidden;">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:${this.graphCollapsed ? 'none' : '1px solid var(--ars-border)'}>">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span style="font-size:11px;font-weight:800;color:var(--ars-color);">⬡ CD Render Graph</span>
+            ${nodes.length > 0 ? `<span style="font-size:9px;color:var(--ars-label);">${nodes.length} components</span>` : ''}
+          </div>
+          <div style="display:flex;align-items:center;gap:4px;">
+            <button class="graph-collapse-btn" style="background:none;border:none;color:var(--ars-label);cursor:pointer;font-size:12px;line-height:1;padding:2px 4px;">${this.graphCollapsed ? '▼' : '▲'}</button>
+            <button class="graph-close-btn" style="background:none;border:none;color:var(--ars-label);cursor:pointer;font-size:14px;line-height:1;padding:2px 4px;">×</button>
+          </div>
+        </div>
+        ${!this.graphCollapsed ? `
+        <div style="display:flex;gap:6px;padding:6px 10px;border-bottom:1px solid var(--ars-border);flex-shrink:0;">
+          <span style="font-size:9px;font-weight:700;color:#10b981;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);padding:2px 6px;border-radius:4px;">OnPush: ${onPushCount}</span>
+          <span style="font-size:9px;font-weight:700;color:#f59e0b;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);padding:2px 6px;border-radius:4px;">Default: ${defaultCount}</span>
+          ${wastedTotal > 0 ? `<span style="font-size:9px;font-weight:700;color:#ef4444;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);padding:2px 6px;border-radius:4px;">Wasted: ${wastedTotal}</span>` : ''}
+        </div>
+        <div style="overflow-y:auto;flex:1;padding:4px 4px 8px;">
+          ${treeHtml}
+        </div>
+        <div style="padding:6px 10px;border-top:1px solid var(--ars-border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+          <span style="font-size:9px;color:var(--ars-label);">OP=OnPush D=Default · r=renders w=wasted</span>
+          <button class="graph-refresh-btn" style="font-size:9px;font-weight:700;background:rgba(6,182,212,.1);border:1px solid rgba(6,182,212,.2);color:#06b6d4;border-radius:4px;padding:2px 6px;cursor:pointer;">↺ Refresh</button>
+        </div>
+        ` : ''}
+      </div>
+    `;
   }
 
   private waterfallPanelHtml(): string {
