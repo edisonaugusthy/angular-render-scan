@@ -4,6 +4,8 @@ Angular Render Scan is a visual debugging overlay for Angular change detection. 
 
 ![Angular Render Scan in Action](docs/assets/angular-render-scan-demo.gif)
 
+[Live Demo](https://edisonaugusthy.github.io/angular-render-scan/)
+
 ## Features
 
 - **Automatic Angular Telemetry:** Out-of-the-box zero-setup component auto-instrumentation using Angular dev-mode profiler hooks.
@@ -376,6 +378,12 @@ provideAngularRenderScan({
 Use that option carefully. The scanner adds runtime instrumentation, DOM reads, canvas work, and console/debug behavior.
 
 ## Demo
+
+Open the hosted demo:
+
+```txt
+https://edisonaugusthy.github.io/angular-render-scan/
+```
 
 Run the local demo:
 
