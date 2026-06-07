@@ -45,11 +45,21 @@ const defaultOptions: AngularRenderScanResolvedOptions = {
 
 let options: AngularRenderScanResolvedOptions = { ...defaultOptions };
 
-export function resolveOptions(next?: AngularRenderScanOptions): AngularRenderScanResolvedOptions {
+interface ResolveOptionsConfig {
+  preferStoredEnabled?: boolean;
+}
+
+interface SetResolvedOptionsConfig extends ResolveOptionsConfig {
+  persistEnabled?: boolean;
+}
+
+export function resolveOptions(next?: AngularRenderScanOptions, config: ResolveOptionsConfig = {}): AngularRenderScanResolvedOptions {
   const merged = { ...options, ...next } as AngularRenderScanResolvedOptions;
   const storedEnabled = readStoredEnabled();
 
-  merged.enabled = typeof next?.enabled === 'boolean'
+  merged.enabled = config.preferStoredEnabled
+    ? storedEnabled ?? (typeof next?.enabled === 'boolean' ? next.enabled : merged.enabled)
+    : typeof next?.enabled === 'boolean'
     ? next.enabled
     : storedEnabled ?? merged.enabled;
 
@@ -79,9 +89,9 @@ export function resolveOptions(next?: AngularRenderScanOptions): AngularRenderSc
   return merged;
 }
 
-export function setResolvedOptions(next: Partial<AngularRenderScanOptions>): AngularRenderScanResolvedOptions {
-  options = resolveOptions(next);
-  if (typeof next.enabled === 'boolean') {
+export function setResolvedOptions(next: Partial<AngularRenderScanOptions>, config: SetResolvedOptionsConfig = {}): AngularRenderScanResolvedOptions {
+  options = resolveOptions(next, config);
+  if (config.persistEnabled !== false && typeof next.enabled === 'boolean') {
     writeStoredEnabled(options.enabled);
   }
   return options;

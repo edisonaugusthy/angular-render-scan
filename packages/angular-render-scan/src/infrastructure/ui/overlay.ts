@@ -30,6 +30,8 @@ interface ActiveHighlight {
   rect: DOMRect;
 }
 
+const TOOLBAR_POSITION_KEY = "angular-render-scan:toolbar-position";
+
 const TOOLBAR_CSS = `
   :host {
     all: initial;
@@ -104,6 +106,14 @@ const TOOLBAR_CSS = `
   .toolbar:active {
     cursor: grabbing;
   }
+  .toolbar.disabled {
+    gap: 0;
+    padding: 5px;
+    border-radius: 999px;
+    box-shadow:
+      0 8px 20px rgba(15, 23, 42, 0.12),
+      inset 0 1px 0 rgba(255,255,255,0.7);
+  }
   .toolbar-switch {
     display: inline-flex;
     align-items: center;
@@ -116,6 +126,12 @@ const TOOLBAR_CSS = `
   :host(.dark) .toolbar-switch {
     background: rgba(255, 255, 255, 0.06);
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  }
+  .toolbar.disabled .toolbar-switch {
+    padding: 5px;
+    border-radius: 999px;
+    background: transparent;
+    box-shadow: none;
   }
   .toolbar-main {
     display: flex;
@@ -452,12 +468,18 @@ const TOOLBAR_CSS = `
   .toolbar-actions .details-toggle {
     display: inline-grid;
     place-items: center;
-    width: 32px;
-    height: 32px;
-    min-width: 32px;
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
     padding: 0;
-    font-size: 14px;
+    font-size: 13px;
     line-height: 1;
+  }
+  .toolbar-actions svg {
+    width: 14px;
+    height: 14px;
+    display: block;
+    stroke: currentColor;
   }
   .toolbar-actions .details-toggle input {
     position: absolute;
@@ -741,6 +763,7 @@ export class AngularRenderScanOverlay {
     private readonly onToggle: (enabled: boolean) => void,
   ) {
     this.options = options;
+    this.restoreToolbarPosition();
     const recorded = getRecording();
     if (recorded && recorded.length > 0) {
       this.latestCycle = recorded[recorded.length - 1];
@@ -968,6 +991,9 @@ export class AngularRenderScanOverlay {
     };
 
     const handleDragEnd = () => {
+      if (this.isDragging) {
+        this.saveToolbarPosition();
+      }
       this.isDragging = false;
     };
 
@@ -1059,7 +1085,62 @@ export class AngularRenderScanOverlay {
     this.canvas.style.width = `${window.innerWidth}px`;
     this.canvas.style.height = `${window.innerHeight}px`;
     this.context?.setTransform(ratio, 0, 0, ratio, 0, 0);
+    this.clampToolbarPosition();
   };
+
+  private restoreToolbarPosition(): void {
+    try {
+      const raw = globalThis.localStorage?.getItem(TOOLBAR_POSITION_KEY);
+      if (!raw) {
+        return;
+      }
+
+      const parsed = JSON.parse(raw) as { right?: unknown; bottom?: unknown };
+      if (
+        typeof parsed.right === "number" &&
+        Number.isFinite(parsed.right) &&
+        typeof parsed.bottom === "number" &&
+        Number.isFinite(parsed.bottom)
+      ) {
+        this.toolbarX = parsed.right;
+        this.toolbarY = parsed.bottom;
+      }
+    } catch {
+      // Persisted position is a convenience; invalid storage should not break rendering.
+    }
+  }
+
+  private saveToolbarPosition(): void {
+    try {
+      globalThis.localStorage?.setItem(
+        TOOLBAR_POSITION_KEY,
+        JSON.stringify({ right: this.toolbarX, bottom: this.toolbarY }),
+      );
+    } catch {
+      // Ignore storage failures in restricted host apps.
+    }
+  }
+
+  private clampToolbarPosition(): void {
+    const toolbar = this.shadow.querySelector(".toolbar") as HTMLElement | null;
+    const rect = toolbar?.getBoundingClientRect();
+    const width = rect?.width ?? 0;
+    const height = rect?.height ?? 0;
+
+    this.toolbarX = Math.max(
+      16,
+      Math.min(this.toolbarX, Math.max(16, window.innerWidth - width - 16)),
+    );
+    this.toolbarY = Math.max(
+      16,
+      Math.min(this.toolbarY, Math.max(16, window.innerHeight - height - 16)),
+    );
+
+    if (toolbar) {
+      toolbar.style.right = `${this.toolbarX}px`;
+      toolbar.style.bottom = `${this.toolbarY}px`;
+    }
+  }
 
   private readonly loop = (): void => {
     this.fps.mark();
@@ -1270,6 +1351,20 @@ export class AngularRenderScanOverlay {
     document.body.style.cursor = active ? "pointer" : "";
   }
 
+  private closeInteractivePanels(): void {
+    this.selectedEntry = undefined;
+    this.hoveredEntry = undefined;
+    this.hoveredRect = undefined;
+    this.detailsMode = false;
+    this.showCpuDetails = false;
+    this.showWaterfallPanel = false;
+    this.showAlertsPanel = false;
+    this.showOnPushPanel = false;
+    this.showZonePollutionPanel = false;
+    this.showGraphPanel = false;
+    this.setDetailsHoverCursor(false);
+  }
+
   private drawDetailsAffordance(
     rect: DOMRect,
     entry: AngularRenderEntry,
@@ -1442,14 +1537,14 @@ export class AngularRenderScanOverlay {
     const htmlChanged = this.replaceToolbarHtml(
       container,
       `
-      ${this.inspectPanelHtml()}
-      ${this.cpuDetailsHtml()}
-      ${this.waterfallPanelHtml()}
-      ${this.alertsPanelHtml()}
-      ${this.onPushPanelHtml(onPushCandidates)}
-      ${this.zonePollutionPanelHtml(pollutionEvents)}
-      ${this.cdGraphPanelHtml()}
-      <div class="toolbar" style="right: ${this.toolbarX}px; bottom: ${this.toolbarY}px;">
+      ${this.options.enabled ? this.inspectPanelHtml() : ""}
+      ${this.options.enabled ? this.cpuDetailsHtml() : ""}
+      ${this.options.enabled ? this.waterfallPanelHtml() : ""}
+      ${this.options.enabled ? this.alertsPanelHtml() : ""}
+      ${this.options.enabled ? this.onPushPanelHtml(onPushCandidates) : ""}
+      ${this.options.enabled ? this.zonePollutionPanelHtml(pollutionEvents) : ""}
+      ${this.options.enabled ? this.cdGraphPanelHtml() : ""}
+      <div class="toolbar ${this.options.enabled ? "" : "disabled"}" style="right: ${this.toolbarX}px; bottom: ${this.toolbarY}px;">
         <div class="toolbar-switch">
           <label class="switch" data-tooltip="Enable or pause render scanning.">
             <input type="checkbox" ${this.options.enabled ? "checked" : ""} aria-label="Angular Render Scan enabled" />
@@ -1457,6 +1552,9 @@ export class AngularRenderScanOverlay {
             <span class="switch-text">${this.options.enabled ? "On" : "Off"}</span>
           </label>
         </div>
+        ${
+          this.options.enabled
+            ? `
         <div class="toolbar-main">
           ${this.metric("FPS", this.options.showFPS ? String(displayedFps) + " fps" : "-", this.getFpsClass(displayedFps))}
           <span class="metric cpu-interactive ${this.showCpuDetails ? "active" : ""}" data-tooltip="Main-thread busy %. High values mean JS is blocking the render pipeline. Click for details.">
@@ -1482,9 +1580,12 @@ export class AngularRenderScanOverlay {
             <span aria-hidden="true">⌖</span>
           </label>
           ${this.options.showCopyPrompt ? '<button class="action-btn copy-prompt-btn" aria-label="Copy prompt for slow render issues" data-tooltip="Copy an AI-ready prompt with only the captured slow/error component issues and their runtime evidence."><span aria-hidden="true">✦</span></button>' : ""}
-          <button class="action-btn export-btn" aria-label="Export session data" data-tooltip="Download the current profiling session data as a .json file."><span aria-hidden="true">⇩</span></button>
-          <button class="clear-btn" aria-label="Clear stats" data-tooltip="Clear current render stats."><span aria-hidden="true">×</span></button>
+          <button class="action-btn export-btn" aria-label="Export session data" data-tooltip="Download the current profiling session data as a .json file."><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"></path><path d="m7 9 5 5 5-5"></path><path d="M5 19h14"></path></svg></button>
+          <button class="clear-btn" aria-label="Clear stats" data-tooltip="Clear current render stats."><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 19 5-5"></path><path d="m9 15 5 5"></path><path d="M15 4 4 15"></path><path d="m14 5 5 5"></path><path d="m18 11-7-7"></path></svg></button>
         </span>
+        `
+            : ""
+        }
         ${this.copyStatus ? `<span class="status" aria-live="polite">${escapeHtml(this.copyStatus)}</span>` : ""}
       </div>
     `,
@@ -1499,7 +1600,11 @@ export class AngularRenderScanOverlay {
     toolbarEl?.querySelector("input")?.addEventListener(
       "change",
       (event) => {
-        this.onToggle((event.target as HTMLInputElement).checked);
+        const enabled = (event.target as HTMLInputElement).checked;
+        if (!enabled) {
+          this.closeInteractivePanels();
+        }
+        this.onToggle(enabled);
       },
       { once: true },
     );
