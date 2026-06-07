@@ -1,8 +1,11 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getResolvedOptions, resetOptionsForTest, setResolvedOptions } from './options';
 
 describe('options', () => {
-  afterEach(() => resetOptionsForTest());
+  afterEach(() => {
+    resetOptionsForTest();
+    vi.unstubAllGlobals();
+  });
 
   it('merges partial options with defaults', () => {
     setResolvedOptions({ enabled: false, log: true });
@@ -75,5 +78,23 @@ describe('options', () => {
     });
     expect(resolved.editorProtocol).toBe('cursor');
     expect(resolved.darkMode).toBe('dark');
+  });
+
+  it('persists enabled state and reuses it as the next default', () => {
+    const storage = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+      removeItem: (key: string) => storage.delete(key),
+    });
+
+    setResolvedOptions({ enabled: false });
+    expect(globalThis.localStorage.getItem('angular-render-scan:enabled')).toBe('false');
+
+    setResolvedOptions({ enabled: true });
+    globalThis.localStorage.setItem('angular-render-scan:enabled', 'false');
+    setResolvedOptions({ log: true });
+
+    expect(getResolvedOptions().enabled).toBe(false);
   });
 });

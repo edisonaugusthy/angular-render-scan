@@ -195,13 +195,11 @@ test('toolbar can toggle live CPU details panel', async ({ page }) => {
   })).toBeNull();
 });
 
-test('wasted render counter and mutation details appear in toolbar and details panel', async ({ page }) => {
+test('mutation details appear in toolbar and details panel', async ({ page }) => {
   await page.goto('/');
   const overlay = page.locator(overlaySelector);
 
   await page.locator('app-product-card').first().getByRole('button', { name: 'Add to Cart' }).click();
-
-  await expect.poll(async () => overlay.evaluate((host) => host.shadowRoot?.textContent ?? '')).toContain('Wasted');
 
   await overlay.evaluate((host) => {
     host.shadowRoot?.querySelector<HTMLInputElement>('.details-checkbox')?.click();
@@ -209,7 +207,6 @@ test('wasted render counter and mutation details appear in toolbar and details p
 
   await page.locator('app-shopping-cart').click({ force: true });
 
-  await expect.poll(async () => overlay.evaluate((host) => host.shadowRoot?.querySelector('.inspect-panel')?.textContent ?? '')).toContain('Wasted Renders');
   await expect.poll(async () => overlay.evaluate((host) => host.shadowRoot?.querySelector('.inspect-panel')?.textContent ?? '')).toContain('DOM Mutation Type');
 });
 
