@@ -14,6 +14,8 @@ const defaultBudgets: Required<AngularRenderScanBudgets> = {
   maxRendersPerSecond: 20
 };
 
+const STORAGE_ENABLED_KEY = 'angular-render-scan:enabled';
+
 const defaultOptions: AngularRenderScanResolvedOptions = {
   enabled: true,
   showToolbar: true,
@@ -43,8 +45,23 @@ const defaultOptions: AngularRenderScanResolvedOptions = {
 
 let options: AngularRenderScanResolvedOptions = { ...defaultOptions };
 
-export function resolveOptions(next?: AngularRenderScanOptions): AngularRenderScanResolvedOptions {
+interface ResolveOptionsConfig {
+  preferStoredEnabled?: boolean;
+}
+
+interface SetResolvedOptionsConfig extends ResolveOptionsConfig {
+  persistEnabled?: boolean;
+}
+
+export function resolveOptions(next?: AngularRenderScanOptions, config: ResolveOptionsConfig = {}): AngularRenderScanResolvedOptions {
   const merged = { ...options, ...next } as AngularRenderScanResolvedOptions;
+  const storedEnabled = readStoredEnabled();
+
+  merged.enabled = config.preferStoredEnabled
+    ? storedEnabled ?? (typeof next?.enabled === 'boolean' ? next.enabled : merged.enabled)
+    : typeof next?.enabled === 'boolean'
+    ? next.enabled
+    : storedEnabled ?? merged.enabled;
 
   if (!['slow', 'fast', 'off'].includes(merged.animationSpeed)) {
     merged.animationSpeed = defaultOptions.animationSpeed;
@@ -72,8 +89,11 @@ export function resolveOptions(next?: AngularRenderScanOptions): AngularRenderSc
   return merged;
 }
 
-export function setResolvedOptions(next: Partial<AngularRenderScanOptions>): AngularRenderScanResolvedOptions {
-  options = resolveOptions(next);
+export function setResolvedOptions(next: Partial<AngularRenderScanOptions>, config: SetResolvedOptionsConfig = {}): AngularRenderScanResolvedOptions {
+  options = resolveOptions(next, config);
+  if (config.persistEnabled !== false && typeof next.enabled === 'boolean') {
+    writeStoredEnabled(options.enabled);
+  }
   return options;
 }
 
@@ -83,6 +103,30 @@ export function getResolvedOptions(): AngularRenderScanResolvedOptions {
 
 export function resetOptionsForTest(): void {
   options = { ...defaultOptions };
+  try {
+    globalThis.localStorage?.removeItem(STORAGE_ENABLED_KEY);
+  } catch {
+    // localStorage can be unavailable in non-browser test environments.
+  }
+}
+
+function readStoredEnabled(): boolean | undefined {
+  try {
+    const value = globalThis.localStorage?.getItem(STORAGE_ENABLED_KEY);
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+  } catch {
+    // localStorage can be unavailable or blocked by the host app.
+  }
+  return undefined;
+}
+
+function writeStoredEnabled(enabled: boolean): void {
+  try {
+    globalThis.localStorage?.setItem(STORAGE_ENABLED_KEY, String(enabled));
+  } catch {
+    // Persisting preference should never break instrumentation.
+  }
 }
 
 function normalizeNonNegative(value: number, fallback: number): number {

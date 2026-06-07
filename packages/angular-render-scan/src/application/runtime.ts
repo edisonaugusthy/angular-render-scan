@@ -1,5 +1,5 @@
 import { AngularRenderScanOverlay } from '../infrastructure/ui/overlay';
-import { getResolvedOptions, resolveOptions, setResolvedOptions } from '../domain/options';
+import { getResolvedOptions, setResolvedOptions } from '../domain/options';
 import {
   finishCycle,
   resetStats,
@@ -58,7 +58,10 @@ export function setTaskScheduler(scheduler: (fn: () => void) => void) {
 }
 
 export function scan(options?: AngularRenderScanOptions): void {
-  const resolved = setResolvedOptions(resolveOptions(options));
+  const resolved = setResolvedOptions(options ?? {}, {
+    persistEnabled: false,
+    preferStoredEnabled: true
+  });
   if (!overlay && typeof document !== 'undefined') {
     overlay = new AngularRenderScanOverlay(resolved, (enabled) => setOptions({ enabled }));
   }
