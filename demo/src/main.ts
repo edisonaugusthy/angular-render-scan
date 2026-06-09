@@ -16,6 +16,8 @@ import {
   getReferentialInstability,
   getZonePollutionEvents,
   provideAngularRenderScan,
+  getSignalDependencyGraph,
+  getComponentCostAnalysis,
 } from 'angular-render-scan';
 
 // ── Types ──────────────────────────────────────────────────────
@@ -89,7 +91,7 @@ class CartItemComponent {
         <span style="font-weight:600;color:var(--amber)">{{ compute() }}</span>
       </div>
       <div style="font-size:11px;color:var(--muted);margin-top:6px">
-        Ran {{ renders() }} times · Last counter: {{ counter() }}
+        Ran {{ renders }} times · Last counter: {{ counter() }}
       </div>
     </div>
   `,
@@ -97,12 +99,17 @@ class CartItemComponent {
 })
 class SlowComponent {
   readonly counter = input.required<number>();
-  readonly renders = signal(0);
+  renders = 0;
 
   compute(): string {
-    this.renders.update(r => r + 1);
-    let n = 0;
-    for (let i = 0; i < 80_000; i++) n += Math.sqrt(i);
+    this.renders += 1;
+    const start = Date.now();
+    let n = 0.5;
+    while (Date.now() - start < 20) {
+      n = Math.sin(n) + 0.1;
+    }
+    const elapsed = Date.now() - start;
+    console.log('COMPUTE ELAPSED:', elapsed);
     return n.toFixed(2);
   }
 }
@@ -130,9 +137,9 @@ class RefDemoComponent {
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [ProductComponent, CartItemComponent, SlowComponent, RefDemoComponent, AngularRenderScanMarkDirective],
+  imports: [ProductComponent, CartItemComponent, SlowComponent, RefDemoComponent],
   template: `
-<div angularRenderScanMark="AppRoot" class="shell">
+<div class="shell">
 
   <!-- ══ LEFT — Shop ══════════════════════════════════════════ -->
   <div class="panel-left">
@@ -181,7 +188,7 @@ class RefDemoComponent {
           <div class="empty"><div class="empty-icon">📋</div>Nothing yet</div>
         } @else {
           <div class="log">
-            @for (e of log(); track e.time + e.msg) {
+            @for (e of log(); track e.time + e.msg + $index) {
               <div class="log-row {{ e.type }}">
                 <span class="log-time">{{ e.time }}</span>
                 <span class="log-msg">{{ e.msg }}</span>
@@ -204,6 +211,8 @@ class RefDemoComponent {
       <button class="tab-btn" [class.active]="activeTab() === 'zone'"       (click)="activeTab.set('zone')">⚠️ Zone</button>
       <button class="tab-btn" [class.active]="activeTab() === 'ref'"        (click)="activeTab.set('ref')">🔗 Refs</button>
       <button class="tab-btn" [class.active]="activeTab() === 'graph'"      (click)="activeTab.set('graph')">📊 Graph</button>
+      <button class="tab-btn" [class.active]="activeTab() === 'signals'"    (click)="activeTab.set('signals'); refreshSignalGraph()">📶 Signals</button>
+      <button class="tab-btn" [class.active]="activeTab() === 'cost'"       (click)="activeTab.set('cost'); refreshCostAnalysis()">💰 Cost</button>
     </div>
 
     <!-- Tab panels -->
@@ -259,7 +268,7 @@ class RefDemoComponent {
                 <table class="tbl">
                   <thead><tr><th>Time</th><th>Source</th><th>Type</th></tr></thead>
                   <tbody>
-                    @for (t of triggers(); track t.time + t.source) {
+                    @for (t of triggers(); track t.time + t.source + $index) {
                       <tr>
                         <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">{{ t.time }}</td>
                         <td style="font-family:var(--mono);font-size:12px">{{ t.source }}</td>
@@ -345,7 +354,7 @@ class RefDemoComponent {
                 <table class="tbl">
                   <thead><tr><th>Time</th><th>Task</th><th>Source</th></tr></thead>
                   <tbody>
-                    @for (e of pollutionEvents(); track e.time + e.trigger) {
+                    @for (e of pollutionEvents(); track e.time + e.trigger + $index) {
                       <tr>
                         <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">{{ e.time }}</td>
                         <td><span class="badge badge-amber">{{ e.trigger }}</span></td>
@@ -464,6 +473,112 @@ class RefDemoComponent {
         </div>
       }
 
+      <!-- ── SIGNALS GRAPH ───────────────────────────────────── -->
+      @if (activeTab() === 'signals') {
+        <div class="tab-panel">
+          <div class="btn-row" style="margin-bottom:10px">
+            <button class="btn btn-primary btn-sm" (click)="refreshSignalGraph()">Refresh signals</button>
+            <span style="font-size:11px;color:var(--muted)">Shows dependencies between signals</span>
+          </div>
+          @if (signalGraph().nodes.length === 0) {
+            <div class="card"><div class="empty"><div class="empty-icon">📶</div>No signals detected yet — trigger signal writes/reads, then Refresh</div></div>
+          } @else {
+            <div class="card">
+              <div class="card-head">
+                <span class="card-label">Signal Nodes ({{ signalGraph().nodes.length }})</span>
+              </div>
+              <div class="card-body flush" style="max-height:220px;overflow-y:auto">
+                <table class="tbl">
+                  <thead><tr><th>Name</th><th>Kind</th><th>Updates</th><th>Wasted</th><th>Value</th></tr></thead>
+                  <tbody>
+                    @for (n of signalGraph().nodes; track n.id) {
+                      <tr>
+                        <td style="font-family:var(--mono);font-size:11px">{{ n.name }}</td>
+                        <td>
+                          <span [class]="'badge ' + (n.kind === 'signal' ? 'badge-indigo' : n.kind === 'computed' ? 'badge-green' : 'badge-amber')">
+                            {{ n.kind }}
+                          </span>
+                        </td>
+                        <td>{{ n.updateCount }}</td>
+                        <td>
+                          @if (n.wastedCount > 0) {
+                            <span style="color:var(--red);font-weight:600">{{ n.wastedCount }}</span>
+                          } @else {
+                            <span style="color:var(--muted)">0</span>
+                          }
+                        </td>
+                        <td style="font-family:var(--mono);font-size:11px;color:var(--muted);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ n.value ?? '—' }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            
+            @if (signalGraph().edges.length > 0) {
+              <div class="card" style="margin-top:8px">
+                <div class="card-head">
+                  <span class="card-label">Dependency Edges ({{ signalGraph().edges.length }})</span>
+                </div>
+                <div class="card-body flush" style="max-height:150px;overflow-y:auto">
+                  <table class="tbl">
+                    <thead><tr><th>From</th><th>To</th></tr></thead>
+                    <tbody>
+                      @for (e of signalGraph().edges; track e.fromId + '->' + e.toId) {
+                        <tr>
+                          <td style="font-family:var(--mono);font-size:11px">{{ e.fromId }}</td>
+                          <td style="font-family:var(--mono);font-size:11px">➔ {{ e.toId }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            }
+          }
+        </div>
+      }
+
+      <!-- ── COMPONENT COST ANALYSIS ─────────────────────────── -->
+      @if (activeTab() === 'cost') {
+        <div class="tab-panel">
+          <div class="btn-row" style="margin-bottom:10px">
+            <button class="btn btn-primary btn-sm" (click)="refreshCostAnalysis()">Refresh cost</button>
+            <span style="font-size:11px;color:var(--muted)">Rank components by render cost</span>
+          </div>
+          @if (costAnalysis().length === 0) {
+            <div class="card"><div class="empty"><div class="empty-icon">💰</div>No cost analysis data yet — interact with the shop, then Refresh</div></div>
+          } @else {
+            <div class="card">
+              <div class="card-head">
+                <span class="card-label">Component Performance Costs</span>
+              </div>
+              <div class="card-body flush" style="max-height:320px;overflow-y:auto">
+                <table class="tbl">
+                  <thead><tr><th>Component</th><th>Renders</th><th>Total duration</th><th>Avg duration</th><th>Cost share</th></tr></thead>
+                  <tbody>
+                    @for (c of costAnalysis(); track c.name) {
+                      <tr>
+                        <td style="font-family:var(--mono);font-size:11px">{{ c.name }}</td>
+                        <td>{{ c.renderCount }}</td>
+                        <td>{{ c.totalDuration.toFixed(2) }}ms</td>
+                        <td>{{ c.averageDuration.toFixed(2) }}ms</td>
+                        <td>
+                          <div style="display:flex;align-items:center;gap:6px">
+                            <div class="bar" style="width:60px"><div class="bar-fill red" [style.width]="c.costPercentage + '%'"></div></div>
+                            <span style="font-family:var(--mono);font-size:11px">{{ c.costPercentage.toFixed(1) }}%</span>
+                          </div>
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          }
+        </div>
+      }
+
     </div><!-- /tab-content -->
   </div><!-- /panel-right -->
 
@@ -474,7 +589,7 @@ class RefDemoComponent {
 class AppComponent implements OnInit, OnDestroy {
 
   // ── Shared reactive counter ──────────────────────────────────
-  readonly activeTab  = signal<'trigger'|'onpush'|'zone'|'ref'|'graph'>('trigger');
+  readonly activeTab  = signal<'trigger'|'onpush'|'zone'|'ref'|'graph'|'signals'|'cost'>('trigger');
 
   readonly counter    = signal(0);
   readonly signalTick = signal(0);
@@ -556,32 +671,61 @@ readonly config = computed(() => ({ theme: this.theme(), size: this.size() }));`
   private streamId: ReturnType<typeof setInterval> | null = null;
 
   private readonly onRender = (e: Event) => {
-    const d = (e as CustomEvent<{ name: string; duration: number; trigger?: string }>).detail;
-    const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-    this.totalCycles.update(c => c + 1);
-    if (d.trigger) {
-      this.lastTrigger.set(d.trigger);
-      this.triggers.update(h => [{
-        time: t,
-        source: d.trigger!,
-        kind: d.trigger!.startsWith('zone') ? 'zone' : d.trigger!.startsWith('signal') ? 'signal' : 'unknown',
-      }, ...h.slice(0, 49)]);
+    const d = (e as CustomEvent<any>).detail;
+    if (d.name === 'AppRoot') {
+      return;
     }
-    this.log.update(l => [{
-      time: t,
-      msg: `[${d.name}] ${d.duration.toFixed(2)}ms${d.trigger ? ` ← ${d.trigger}` : ''}`,
-      type: d.duration > 15 ? 'warn' : 'info',
-    }, ...l.slice(0, 24)]);
+
+    const trigger = d.renderCause?.trigger || d.reason;
+    const source = d.renderCause?.source;
+
+    // Ignore render events triggered by updating demo debug/stats signals
+    if (source && (
+      source.includes('totalCycles') ||
+      source.includes('lastTrigger') ||
+      source.includes('triggers') ||
+      source.includes('log') ||
+      source.includes('pollutionEvents') ||
+      source.includes('onPushList') ||
+      source.includes('refList') ||
+      source.includes('graphNodes') ||
+      source.includes('signalGraph') ||
+      source.includes('costAnalysis')
+    )) {
+      return;
+    }
+
+    const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    const duration = d.latestDuration ?? d.duration ?? 0;
+
+    setTimeout(() => {
+      this.totalCycles.update(c => c + 1);
+      if (trigger) {
+        this.lastTrigger.set(trigger);
+        this.triggers.update(h => [{
+          time: t,
+          source: trigger,
+          kind: trigger.startsWith('zone') ? 'zone' : trigger.startsWith('signal') ? 'signal' : 'unknown',
+        }, ...h.slice(0, 49)]);
+      }
+      this.log.update(l => [{
+        time: t,
+        msg: `[${d.name}] ${duration.toFixed(2)}ms${trigger ? ` ← ${trigger}` : ''}`,
+        type: duration > 15 ? 'warn' : 'info',
+      }, ...l.slice(0, 24)]);
+    });
   };
 
   private readonly onPollution = (e: Event) => {
     const d = (e as CustomEvent).detail;
     const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-    this.pollutionEvents.update(l => [{
-      time: t,
-      trigger: d?.suspectedTrigger ?? 'unknown zone task',
-      comps: d?.componentCount ?? 0,
-    }, ...l.slice(0, 49)]);
+    setTimeout(() => {
+      this.pollutionEvents.update(l => [{
+        time: t,
+        trigger: d?.suspectedTrigger ?? 'unknown zone task',
+        comps: d?.componentCount ?? 0,
+      }, ...l.slice(0, 49)]);
+    });
   };
 
   ngOnInit() {
@@ -646,6 +790,18 @@ readonly config = computed(() => ({ theme: this.theme(), size: this.size() }));`
   refreshGraph() {
     const g = getCdGraph();
     this.graphNodes.set(g.nodes);
+  }
+
+  // ── Signals graph ─────────────────────────────────────────────
+  readonly signalGraph = signal<ReturnType<typeof getSignalDependencyGraph>>({ nodes: [], edges: [] });
+  refreshSignalGraph() {
+    this.signalGraph.set(getSignalDependencyGraph());
+  }
+
+  // ── Cost Analysis ─────────────────────────────────────────────
+  readonly costAnalysis = signal<ReturnType<typeof getComponentCostAnalysis>>([]);
+  refreshCostAnalysis() {
+    this.costAnalysis.set(getComponentCostAnalysis());
   }
 
 

@@ -1,4 +1,13 @@
-import { beginCycle, currentCycleId, endCycle, ensureCycleForComponentCheck } from '../../application/runtime';
+import {
+  beginCycle,
+  currentCycleId,
+  endCycle,
+  ensureCycleForComponentCheck,
+  setActiveCheckingComponent,
+  setActiveComputedSignal,
+  recordSignalRead,
+  recordSignalWrite
+} from '../../application/runtime';
 import { recordComponentCheck, registerComponent, unregisterComponent } from '../../application/stats';
 import { checkReferentialStability } from '../../application/referential-stability';
 import { getResolvedOptions } from '../../domain/options';
@@ -6,6 +15,131 @@ import type { AngularRenderChangedInput, AngularRenderScanRenderDetails } from '
 
 const ProfilerEventTemplateUpdateStart = 2;
 const ProfilerEventTemplateUpdateEnd = 3;
+
+function patchSignalsOnInstance(instance: any, compName: string): void {
+  if (!instance || typeof instance !== 'object') return;
+  if (instance.__angularRenderScanPatchedSignals) return;
+  instance.__angularRenderScanPatchedSignals = true;
+
+  let signalSymbol: symbol | undefined;
+  const getSignalSymbol = (obj: any) => {
+    if (!obj || (typeof obj !== 'object' && typeof obj !== 'function')) return undefined;
+    if (signalSymbol) return signalSymbol;
+    const sym = Reflect.ownKeys(obj).find(k => typeof k === 'symbol' && String(k).includes('SIGNAL'));
+    if (sym) signalSymbol = sym as symbol;
+    return signalSymbol;
+  };
+
+  const keys = Object.getOwnPropertyNames(instance);
+  for (const key of keys) {
+    let prop: any;
+    try {
+      prop = instance[key];
+    } catch {
+      continue;
+    }
+    if (!prop) continue;
+
+    const sym = getSignalSymbol(prop);
+    if (sym && typeof prop === 'function') {
+      const internalNode = prop[sym];
+      const debugName = internalNode?.debugName || `${compName}.${key}`;
+
+      if (!prop.__angularRenderScanPatched) {
+        const originalSignal = prop;
+        
+        const wrapped = function(this: any) {
+          const kind = typeof originalSignal.set === 'function' ? 'signal' : 'computed';
+          const previousComputed = (window as any).__angularActiveComputedSignalName || null;
+          if (kind === 'computed') {
+            (window as any).__angularActiveComputedSignalName = debugName;
+            setActiveComputedSignal(debugName);
+          }
+
+          recordSignalRead(debugName, kind);
+
+          try {
+            return originalSignal.apply(this, arguments);
+          } finally {
+            if (kind === 'computed') {
+              (window as any).__angularActiveComputedSignalName = previousComputed;
+              setActiveComputedSignal(previousComputed);
+            }
+          }
+        } as any;
+
+        wrapped.__angularRenderScanPatched = true;
+        wrapped[sym] = internalNode;
+        wrapped.toString = originalSignal.toString.bind(originalSignal);
+
+        if (typeof originalSignal.set === 'function') {
+          wrapped.set = function(val: any) {
+            const curVal = internalNode?.value;
+            const equal = internalNode?.equal || ((a: any, b: any) => a === b);
+            const isWasted = equal(curVal, val);
+
+            const err = new Error();
+            const stack = err.stack ? err.stack.split('\n').slice(2) : [];
+            const cleanStack = stack
+              .map((f: any) => f.trim().replace(/^at\s+/, ''))
+              .filter((f: any) => 
+                !f.includes('angular-render-scan') && 
+                !f.includes('zone.js') &&
+                !f.includes('node_modules')
+              );
+
+            recordSignalWrite(debugName, 'set', cleanStack, isWasted);
+            return originalSignal.set.apply(originalSignal, arguments);
+          };
+        }
+
+        if (typeof originalSignal.update === 'function') {
+          wrapped.update = function(fn: any) {
+            const curVal = internalNode?.value;
+            const newVal = fn(curVal);
+            const equal = internalNode?.equal || ((a: any, b: any) => a === b);
+            const isWasted = equal(curVal, newVal);
+
+            const err = new Error();
+            const stack = err.stack ? err.stack.split('\n').slice(2) : [];
+            const cleanStack = stack
+              .map((f: any) => f.trim().replace(/^at\s+/, ''))
+              .filter((f: any) => 
+                !f.includes('angular-render-scan') && 
+                !f.includes('zone.js') &&
+                !f.includes('node_modules')
+              );
+
+            recordSignalWrite(debugName, 'update', cleanStack, isWasted);
+            return originalSignal.update.apply(originalSignal, arguments);
+          };
+        }
+
+        if (typeof originalSignal.asReadonly === 'function') {
+          wrapped.asReadonly = originalSignal.asReadonly.bind(originalSignal);
+        }
+
+        instance[key] = wrapped;
+      }
+    } else if (typeof prop === 'object' && prop !== null && !Array.isArray(prop)) {
+      const ctorName = prop.constructor?.name;
+      if (
+        ctorName &&
+        !ctorName.startsWith('ɵ') &&
+        !ctorName.startsWith('ElementRef') &&
+        !ctorName.startsWith('ViewContainerRef') &&
+        !ctorName.startsWith('ChangeDetectorRef') &&
+        !ctorName.startsWith('NgZone') &&
+        !ctorName.startsWith('ApplicationRef') &&
+        !ctorName.startsWith('Router') &&
+        !ctorName.startsWith('ActivatedRoute') &&
+        !(prop instanceof HTMLElement)
+      ) {
+        patchSignalsOnInstance(prop, ctorName);
+      }
+    }
+  }
+}
 
 let nextAutoComponentId = 0;
 
@@ -211,6 +345,9 @@ export function setupAutoInstrumentation(): void {
         }
 
         if (compData && compData.element) {
+          patchSignalsOnInstance(instance, compData.name);
+          setActiveCheckingComponent(compData.id, compData.name);
+
           const changedInputs = detectInputChanges(
             instance,
             compData,
@@ -283,6 +420,7 @@ export function setupAutoInstrumentation(): void {
             // Stack mismatch — recover
             componentCheckStack.length = 0;
           }
+          setActiveCheckingComponent(null, null);
         }
       }
     });

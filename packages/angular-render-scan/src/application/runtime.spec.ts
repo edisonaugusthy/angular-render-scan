@@ -9,6 +9,12 @@ import {
   getAIPrompt,
   getRecording,
   stop,
+  getSignalDependencyGraph,
+  recordSignalRead,
+  recordSignalWrite,
+  getRenderCause,
+  setActiveCheckingComponent,
+  setResolvedTriggerForTest
 } from './runtime';
 
 describe('runtime diagnostics', () => {
@@ -68,5 +74,63 @@ describe('runtime diagnostics', () => {
     endCycle(cycleId);
 
     expect(getRecording()).toHaveLength(1);
+  });
+
+  it('tracks signal dependencies and builds dependency graph', () => {
+    setActiveCheckingComponent('comp1', 'ProductComponent');
+    recordSignalRead('productsSignal', 'signal');
+    setActiveCheckingComponent(null, null);
+
+    const graph = getSignalDependencyGraph();
+    expect(graph.nodes.some(n => n.name === 'productsSignal' && n.kind === 'signal')).toBe(true);
+    expect(graph.nodes.some(n => n.name === 'ProductComponent' && n.kind === 'component')).toBe(true);
+    expect(graph.edges).toHaveLength(1);
+    expect(graph.edges[0]).toEqual({ fromId: 'productsSignal', toId: 'ProductComponent' });
+  });
+
+  it('tracks signal writes and flags wasted writes', () => {
+    recordSignalWrite('productsSignal', 'set', ['frame1'], true); // wasted
+    recordSignalWrite('productsSignal', 'set', ['frame2'], false); // effective
+
+    const graph = getSignalDependencyGraph();
+    const node = graph.nodes.find(n => n.name === 'productsSignal');
+    expect(node).toBeDefined();
+    expect(node?.updateCount).toBe(2);
+    expect(node?.wastedCount).toBe(1);
+  });
+
+  it('resolves render cause correctly based on signal writes and dependency graph', () => {
+    const element = document.createElement('app-product');
+    document.body.append(element);
+    registerComponent({ id: 'product', name: 'ProductComponent', element, selector: 'app-product' });
+
+    // Component reads signal
+    setActiveCheckingComponent('product', 'ProductComponent');
+    recordSignalRead('productsSignal', 'signal');
+    setActiveCheckingComponent(null, null);
+
+    // Write to signal
+    recordSignalWrite('productsSignal', 'set', ['frame1'], false);
+
+    // CD cycle triggered by signal:write
+    const mockTrigger = { source: 'signal:write' as const, detail: '', callSite: '', isUserInteraction: false, isZonePollution: false };
+    
+    // Simulate beginCycle and record Component check
+    const cycleId = beginCycle();
+    // Overwrite the resolved activeCycleTrigger since Zone hook isn't loaded
+    setResolvedTriggerForTest(mockTrigger);
+    
+    const entry = recordComponentCheck('product', 5.0, cycleId);
+    endCycle(cycleId);
+
+    expect(entry).toBeDefined();
+    expect(entry?.renderCause).toBeDefined();
+    expect(entry?.renderCause?.trigger).toBe('signal:write');
+    expect(entry?.renderCause?.source).toBe('productsSignal');
+    expect(entry?.renderCause?.stack).toEqual(['frame1']);
+
+    const cause = getRenderCause('ProductComponent');
+    expect(cause).toBeDefined();
+    expect(cause?.source).toBe('productsSignal');
   });
 });

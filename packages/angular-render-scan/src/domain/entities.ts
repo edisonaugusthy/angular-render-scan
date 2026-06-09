@@ -133,6 +133,41 @@ export interface AngularRenderScanBudgets {
   maxRendersPerSecond?: number;
 }
 
+export interface RenderCause {
+  trigger: string;
+  source?: string;
+  stack?: string[];
+  timestamp: number;
+}
+
+export interface SignalDependencyNode {
+  id: string;
+  name: string;
+  kind: 'signal' | 'computed' | 'component';
+  updateCount: number;
+  wastedCount: number;
+  value?: string;
+}
+
+export interface SignalDependencyEdge {
+  fromId: string;
+  toId: string;
+}
+
+export interface SignalDependencyGraph {
+  nodes: SignalDependencyNode[];
+  edges: SignalDependencyEdge[];
+}
+
+export interface ComponentCostEntry {
+  name: string;
+  selector: string;
+  totalDuration: number;
+  averageDuration: number;
+  renderCount: number;
+  costPercentage: number;
+}
+
 export interface AngularRenderEntry {
   id: string;
   name: string;
@@ -156,6 +191,10 @@ export interface AngularRenderEntry {
   isOnPushCandidate?: boolean;
   /** NEW: parent component id */
   parentId?: string | null;
+  /** v0.2: Render cause chain */
+  renderCause?: RenderCause;
+  /** v0.2: Number of renders that mutated the DOM */
+  templateChanges?: number;
 }
 
 export interface AngularRenderCycle {
@@ -171,6 +210,12 @@ export interface AngularRenderCycle {
   trigger?: CdTriggerAttribution;
   /** NEW: Whether this cycle is suspected Zone pollution */
   isZonePollution?: boolean;
+  /** v0.2: Wasted CD Cycle Stats */
+  wastedCdStats?: {
+    checked: number;
+    changed: number;
+    wasteScore: number;
+  };
 }
 
 export interface WaterfallEntry {

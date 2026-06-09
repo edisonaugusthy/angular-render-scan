@@ -9,6 +9,7 @@ import {
   getSessionData,
   getWastedStats,
   getLeakedComponents,
+  getRegisteredComponents,
   getOnPushCandidates,
   getReferentialInstability,
   getZonePollutionEvents,
@@ -31,6 +32,7 @@ interface ActiveHighlight {
 }
 
 const TOOLBAR_POSITION_KEY = "angular-render-scan:toolbar-position";
+const TOOLBAR_COMPACT_KEY = "angular-render-scan:toolbar-compact";
 
 const TOOLBAR_CSS = `
   :host {
@@ -66,10 +68,10 @@ const TOOLBAR_CSS = `
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 7px;
+    gap: 5px;
     width: auto;
     max-width: calc(100vw - 32px);
-    padding: 6px;
+    padding: 5px;
     border: 1px solid rgba(15, 23, 42, 0.1);
     border-radius: 13px;
     background:
@@ -107,6 +109,11 @@ const TOOLBAR_CSS = `
     cursor: grabbing;
   }
   .toolbar.disabled {
+    opacity: 0.82;
+    pointer-events: auto;
+    cursor: grab;
+  }
+  .toolbar.disabled {
     gap: 0;
     padding: 5px;
     border-radius: 999px;
@@ -117,7 +124,7 @@ const TOOLBAR_CSS = `
   .toolbar-switch {
     display: inline-flex;
     align-items: center;
-    padding: 6px 7px;
+    padding: 4px 7px;
     border-radius: 9px;
     background: rgba(15, 23, 42, 0.045);
     box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.055);
@@ -132,20 +139,34 @@ const TOOLBAR_CSS = `
     border-radius: 999px;
     background: transparent;
     box-shadow: none;
+    min-width: 0;
+    gap: 6px;
   }
   .toolbar-main {
     display: flex;
     align-items: stretch;
     flex-wrap: wrap;
-    gap: 5px;
+    gap: 4px;
     min-width: 0;
     max-width: calc(100vw - 230px);
     overflow: visible;
   }
+  .toolbar.compact .toolbar-main {
+    max-width: calc(100vw - 168px);
+  }
+  .toolbar-extended {
+    display: flex;
+    align-items: stretch;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .toolbar.compact .toolbar-extended {
+    display: none;
+  }
   .toolbar-actions {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
     justify-content: flex-end;
     min-width: max-content;
     flex: 0 0 auto;
@@ -154,6 +175,33 @@ const TOOLBAR_CSS = `
   }
   :host(.dark) .toolbar-actions {
     border-left-color: rgba(255, 255, 255, 0.08);
+  }
+  .toolbar.compact .toolbar-actions {
+    gap: 4px;
+  }
+  .toolbar-size-toggle {
+    min-width: 30px;
+    justify-content: center;
+  }
+  .toolbar-actions .toolbar-size-toggle {
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+    padding: 0;
+  }
+  .toolbar.compact .toolbar-size-toggle {
+    min-width: 30px;
+  }
+  .toolbar-picker-toggle {
+    display: inline-grid;
+    place-items: center;
+  }
+  .toolbar-picker-toggle svg,
+  .toolbar-size-toggle svg {
+    width: 14px;
+    height: 14px;
+    display: block;
+    stroke: currentColor;
   }
   .switch, .details-toggle, .clear-btn, .action-btn, .panel-close, .panel-copy-btn {
     cursor: pointer;
@@ -202,8 +250,8 @@ const TOOLBAR_CSS = `
   }
   .track {
     position: relative;
-    width: 32px;
-    height: 18px;
+    width: 28px;
+    height: 16px;
     border-radius: 999px;
     background: #e2e8f0;
     transition: background 0.15s ease;
@@ -213,8 +261,8 @@ const TOOLBAR_CSS = `
     position: absolute;
     top: 2px;
     left: 2px;
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     border-radius: 999px;
     background: #ffffff;
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.15);
@@ -224,7 +272,7 @@ const TOOLBAR_CSS = `
     background: #2563eb;
   }
   input:checked + .track::after {
-    transform: translateX(14px);
+    transform: translateX(12px);
   }
   .switch-text {
     display: none;
@@ -236,7 +284,7 @@ const TOOLBAR_CSS = `
     gap: 3px;
     min-width: 60px;
     flex: 0 0 auto;
-    padding: 7px 8px;
+    padding: 6px 7px;
     border-radius: 9px;
     background: rgba(255, 255, 255, 0.62);
     box-shadow:
@@ -278,7 +326,7 @@ const TOOLBAR_CSS = `
     cursor: pointer;
     transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
     border-radius: 9px;
-    padding: 7px 8px;
+    padding: 6px 7px;
     margin: 0;
     user-select: none;
     display: inline-grid;
@@ -533,7 +581,8 @@ const TOOLBAR_CSS = `
     bottom: 72px;
     z-index: 2147483647;
     width: min(280px, calc(100vw - 32px));
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: 6px;
     padding: 10px;
     border: 1px solid var(--ars-border);
@@ -553,9 +602,9 @@ const TOOLBAR_CSS = `
   .inspect-panel.medium { border-top-color: #f59e0b; }
   .inspect-panel.fast { border-top-color: #10b981; }
   .panel-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
     gap: 8px;
     border-bottom: 1px solid var(--ars-border);
     padding-bottom: 6px;
@@ -564,12 +613,15 @@ const TOOLBAR_CSS = `
     font-size: 12px;
     font-weight: 800;
     color: var(--ars-color);
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
+    word-break: normal;
   }
   .panel-actions {
     display: flex;
     align-items: center;
     gap: 6px;
+    flex-wrap: wrap;
+    justify-content: flex-start;
     flex-shrink: 0;
   }
   .severity {
@@ -600,7 +652,7 @@ const TOOLBAR_CSS = `
   }
   .panel-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 4px;
     margin: 2px 0;
   }
@@ -614,6 +666,7 @@ const TOOLBAR_CSS = `
     flex-direction: column;
     justify-content: center;
     min-height: 36px;
+    min-width: 0;
   }
   .panel-grid .panel-label {
     font-size: 8px;
@@ -627,6 +680,8 @@ const TOOLBAR_CSS = `
     font-weight: 700;
     color: var(--ars-color);
     margin-top: 1px;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
   .inspect-panel .panel-field:not(.panel-grid .panel-field) {
     border-top: 1px solid var(--ars-border);
@@ -755,6 +810,7 @@ export class AngularRenderScanOverlay {
   private budgetViolations: BudgetViolation[] = [];
   private showAlertsPanel = false;
   private showWaterfallPanel = false;
+  private compactToolbar = true;
   private keyListener?: (e: KeyboardEvent) => void;
   private budgetViolationListener?: (e: Event) => void;
 
@@ -764,6 +820,7 @@ export class AngularRenderScanOverlay {
   ) {
     this.options = options;
     this.restoreToolbarPosition();
+    this.restoreToolbarCompact();
     const recorded = getRecording();
     if (recorded && recorded.length > 0) {
       this.latestCycle = recorded[recorded.length - 1];
@@ -885,49 +942,23 @@ export class AngularRenderScanOverlay {
         return;
       }
 
-      const hovered = this.findClickedEntry(e.clientX, e.clientY);
+      const previousHoveredId = this.hoveredEntry?.id;
+      const hovered = this.findPickerEntry(e.clientX, e.clientY);
       this.hoveredEntry = hovered?.entry;
       this.hoveredRect = hovered?.rect;
       this.setDetailsHoverCursor(Boolean(hovered));
+      if (previousHoveredId !== this.hoveredEntry?.id) {
+        this.renderToolbar();
+      }
     };
 
     this.globalClickListener = (e: MouseEvent) => {
-      if (!this.detailsMode && !e.metaKey && !e.ctrlKey) return;
-      if (!this.options.enabled) return;
+      if (!this.detailsMode || !this.options.enabled) return;
       if (this.isOverlayTarget(e.target)) return;
-
-      const x = e.clientX;
-      const y = e.clientY;
-      const clicked =
-        this.findClickedEntry(x, y) ??
-        (this.hoveredEntry && this.hoveredRect
-          ? {
-              entry: this.hoveredEntry,
-              rect: this.hoveredRect,
-              expiresAt: 0,
-            }
-          : undefined);
-
-      if (clicked) {
-        e.preventDefault();
-        e.stopPropagation();
-        this.selectedEntry = clicked.entry;
-        this.renderToolbar();
-
-        const globalNg = (window as any).ng;
-        if (globalNg && globalNg.getComponent) {
-          const component = globalNg.getComponent(clicked.entry.element);
-          console.info(
-            `[angular-render-scan] Inspecting <${clicked.entry.name}>:`,
-            component || clicked.entry.element,
-          );
-        } else {
-          console.info(
-            `[angular-render-scan] Inspecting <${clicked.entry.name}> element:`,
-            clicked.entry.element,
-          );
-        }
-      }
+      this.hoveredEntry = undefined;
+      this.hoveredRect = undefined;
+      this.setDetailsHoverCursor(false);
+      this.renderToolbar();
     };
 
     document.addEventListener("mousemove", this.globalMoveListener, {
@@ -944,10 +975,11 @@ export class AngularRenderScanOverlay {
       const event = e as MouseEvent | TouchEvent;
       const target = event.target as HTMLElement;
       if (
-        target.closest(".switch") ||
-        target.closest(".clear-btn") ||
-        target.closest(".action-btn") ||
-        target.closest(".panel-close")
+        this.options.enabled &&
+        (target.closest(".switch") ||
+          target.closest(".clear-btn") ||
+          target.closest(".action-btn") ||
+          target.closest(".panel-close"))
       ) {
         return; // Don't drag if clicking buttons
       }
@@ -1110,6 +1142,23 @@ export class AngularRenderScanOverlay {
     }
   }
 
+  private restoreToolbarCompact(): void {
+    const raw = globalThis.localStorage?.getItem(TOOLBAR_COMPACT_KEY);
+    if (raw === null) return;
+    this.compactToolbar = raw !== "false";
+  }
+
+  private saveToolbarCompact(): void {
+    try {
+      globalThis.localStorage?.setItem(
+        TOOLBAR_COMPACT_KEY,
+        String(this.compactToolbar),
+      );
+    } catch {
+      // Ignore storage failures.
+    }
+  }
+
   private saveToolbarPosition(): void {
     try {
       globalThis.localStorage?.setItem(
@@ -1238,6 +1287,45 @@ export class AngularRenderScanOverlay {
       }) ?? [];
 
     return this.smallestContainingHighlight(latestHighlights, x, y);
+  }
+
+  private findPickerEntry(x: number, y: number): ActiveHighlight | undefined {
+    const hitElement = document.elementFromPoint(x, y);
+    if (!hitElement || this.isOverlayTarget(hitElement)) {
+      return undefined;
+    }
+
+    const matches = getRegisteredComponents()
+      .flatMap((entry) => {
+        if (!entry.element.isConnected || !entry.element.contains(hitElement)) {
+          return [];
+        }
+
+        const rect = entry.element.getBoundingClientRect();
+        if (
+          rect.width <= 0 ||
+          rect.height <= 0 ||
+          x < rect.left ||
+          x > rect.right ||
+          y < rect.top ||
+          y > rect.bottom
+        ) {
+          return [];
+        }
+
+        return [{ entry, rect, expiresAt: 0 }];
+      })
+      .sort((a, b) => area(a.rect) - area(b.rect));
+
+    if (
+      matches.length === 1 &&
+      matches[0].entry.parentId === null &&
+      hitElement !== matches[0].entry.element
+    ) {
+      return undefined;
+    }
+
+    return matches[0] ?? this.findClickedEntry(x, y);
   }
 
   private smallestContainingHighlight(
@@ -1446,6 +1534,7 @@ export class AngularRenderScanOverlay {
 
     const cycle = this.latestCycle;
     const displayedFps = this.latestFps || this.fps.value;
+    const compactToolbar = this.compactToolbar || !this.options.enabled;
     const cpuVal = this.cpu.value;
     const cpuClass = cpuVal > 50 ? "cpu-high" : cpuVal > 20 ? "cpu-medium" : "";
 
@@ -1534,6 +1623,8 @@ export class AngularRenderScanOverlay {
         </span>`
         : "";
 
+    const cycleWasteText = cycle?.wastedCdStats ? ` (${cycle.wastedCdStats.wasteScore}% waste)` : '';
+
     const htmlChanged = this.replaceToolbarHtml(
       container,
       `
@@ -1544,7 +1635,7 @@ export class AngularRenderScanOverlay {
       ${this.options.enabled ? this.onPushPanelHtml(onPushCandidates) : ""}
       ${this.options.enabled ? this.zonePollutionPanelHtml(pollutionEvents) : ""}
       ${this.options.enabled ? this.cdGraphPanelHtml() : ""}
-      <div class="toolbar ${this.options.enabled ? "" : "disabled"}" style="right: ${this.toolbarX}px; bottom: ${this.toolbarY}px;">
+      <div class="toolbar ${this.options.enabled ? (compactToolbar ? "compact" : "expanded") : "disabled"}" style="right: ${this.toolbarX}px; bottom: ${this.toolbarY}px;">
         <div class="toolbar-switch">
           <label class="switch" data-tooltip="Enable or pause render scanning.">
             <input type="checkbox" ${this.options.enabled ? "checked" : ""} aria-label="Angular Render Scan enabled" />
@@ -1552,17 +1643,18 @@ export class AngularRenderScanOverlay {
             <span class="switch-text">${this.options.enabled ? "On" : "Off"}</span>
           </label>
         </div>
-        ${
-          this.options.enabled
-            ? `
+        ${this.options.enabled ? `
         <div class="toolbar-main">
           ${this.metric("FPS", this.options.showFPS ? String(displayedFps) + " fps" : "-", this.getFpsClass(displayedFps))}
           <span class="metric cpu-interactive ${this.showCpuDetails ? "active" : ""}" data-tooltip="Main-thread busy %. High values mean JS is blocking the render pipeline. Click for details.">
             <span class="label">CPU</span>
             <span class="value ${cpuClass}">${cpuVal}%</span>
           </span>
-          ${this.metric("Last cycle", cycle ? `${cycle.duration.toFixed(1)}ms` : "-")}
           ${sparklineSvg}
+        </div>
+        ${compactToolbar ? "" : `
+        <div class="toolbar-extended">
+          ${this.metric("Last cycle", cycle ? `${cycle.duration.toFixed(1)}ms${cycleWasteText}` : "-")}
           <span class="metric graph-toggle ${this.showGraphPanel ? "active" : ""}" style="cursor:pointer;" data-tooltip="Live CD render graph — shows how change detection propagates through the component tree. Click to toggle.">
             <span class="label">CD Graph</span>
             <span class="value" style="color:#06b6d4;">Graph</span>
@@ -1574,18 +1666,21 @@ export class AngularRenderScanOverlay {
           ${onPushChip}
           ${pollutionChip}
         </div>
+        `}
         <span class="toolbar-actions">
-          <label class="details-toggle ${this.detailsMode ? "active" : ""}" data-tooltip="Check Details, hover a captured component to highlight it, then click to pin its recommendation panel. Uncheck to clear the panel.">
-            <input class="details-checkbox" type="checkbox" ${this.detailsMode ? "checked" : ""} aria-label="Enable component details panel" />
-            <span aria-hidden="true">⌖</span>
-          </label>
+          ${compactToolbar ? "" : `
           ${this.options.showCopyPrompt ? '<button class="action-btn copy-prompt-btn" aria-label="Copy prompt for slow render issues" data-tooltip="Copy an AI-ready prompt with only the captured slow/error component issues and their runtime evidence."><span aria-hidden="true">✦</span></button>' : ""}
           <button class="action-btn export-btn" aria-label="Export session data" data-tooltip="Download the current profiling session data as a .json file."><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"></path><path d="m7 9 5 5 5-5"></path><path d="M5 19h14"></path></svg></button>
           <button class="clear-btn" aria-label="Clear stats" data-tooltip="Clear current render stats."><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 19 5-5"></path><path d="m9 15 5 5"></path><path d="M15 4 4 15"></path><path d="m14 5 5 5"></path><path d="m18 11-7-7"></path></svg></button>
+          `}
+          <button class="action-btn details-toggle toolbar-picker-toggle ${this.detailsMode ? "active" : ""}" aria-pressed="${this.detailsMode}" aria-label="Enable component details panel" data-tooltip="Use the picker to inspect a component on hover. Clicks continue to the app.">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4l7 16 2.8-6.2L20 11 4 4z"></path><path d="M13.8 13.8 20 20"></path></svg>
+          </button>
+          <button class="action-btn toolbar-size-toggle" aria-pressed="${compactToolbar ? "false" : "true"}" aria-label="${compactToolbar ? "Show extended view" : "Show compact view"}" data-tooltip="${compactToolbar ? "Show extended view" : "Show small view"}">
+            ${compactToolbar ? '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"></path></svg>' : '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"></path></svg>'}
+          </button>
         </span>
-        `
-            : ""
-        }
+        ` : ""}
         ${this.copyStatus ? `<span class="status" aria-live="polite">${escapeHtml(this.copyStatus)}</span>` : ""}
       </div>
     `,
@@ -1613,6 +1708,31 @@ export class AngularRenderScanOverlay {
       "click",
       () => {
         this.showCpuDetails = !this.showCpuDetails;
+        this.renderToolbar();
+      },
+      { once: true },
+    );
+
+    toolbarEl?.querySelector(".toolbar-size-toggle")?.addEventListener(
+      "click",
+      () => {
+        this.compactToolbar = !this.compactToolbar;
+        this.saveToolbarCompact();
+        this.renderToolbar();
+        this.clampToolbarPosition();
+        this.saveToolbarPosition();
+      },
+      { once: true },
+    );
+
+    toolbarEl?.querySelector(".toolbar-picker-toggle")?.addEventListener(
+      "click",
+      () => {
+        this.detailsMode = !this.detailsMode;
+        this.selectedEntry = undefined;
+        this.hoveredEntry = undefined;
+        this.hoveredRect = undefined;
+        this.setDetailsHoverCursor(false);
         this.renderToolbar();
       },
       { once: true },
@@ -1670,21 +1790,6 @@ export class AngularRenderScanOverlay {
       { once: true },
     );
 
-    toolbarEl?.querySelector(".details-checkbox")?.addEventListener(
-      "change",
-      (event) => {
-        this.detailsMode = (event.target as HTMLInputElement).checked;
-        this.hoveredEntry = undefined;
-        this.hoveredRect = undefined;
-        this.setDetailsHoverCursor(false);
-        if (!this.detailsMode) {
-          this.selectedEntry = undefined;
-        }
-        this.renderToolbar();
-      },
-      { once: true },
-    );
-
     toolbarEl?.querySelector(".copy-prompt-btn")?.addEventListener(
       "click",
       async () => {
@@ -1721,7 +1826,11 @@ export class AngularRenderScanOverlay {
     container.querySelector(".panel-close")?.addEventListener(
       "click",
       () => {
+        this.detailsMode = false;
         this.selectedEntry = undefined;
+        this.hoveredEntry = undefined;
+        this.hoveredRect = undefined;
+        this.setDetailsHoverCursor(false);
         this.renderToolbar();
       },
       { once: true },
@@ -1739,11 +1848,12 @@ export class AngularRenderScanOverlay {
     container.querySelector(".panel-copy-btn")?.addEventListener(
       "click",
       async () => {
-        if (!this.selectedEntry) {
+        const entry = this.currentDetailsEntry();
+        if (!entry) {
           return;
         }
         const copied = await this.copyComponentPrompt(
-          this.selectedEntry,
+          entry,
           this.latestFps || this.fps.value,
         );
         this.setCopyStatus(copied ? "Copied" : "Copy failed");
@@ -1754,10 +1864,10 @@ export class AngularRenderScanOverlay {
     container.querySelector(".open-editor-btn")?.addEventListener(
       "click",
       async () => {
-        if (!this.selectedEntry) {
+        const entry = this.currentDetailsEntry();
+        if (!entry) {
           return;
         }
-        const entry = this.selectedEntry;
         const query = `class ${entry.name}`;
 
         try {
@@ -1900,7 +2010,7 @@ export class AngularRenderScanOverlay {
   }
 
   private inspectPanelHtml(): string {
-    const entry = this.selectedEntry;
+    const entry = this.currentDetailsEntry();
     if (!entry) {
       return "";
     }
@@ -1966,6 +2076,28 @@ export class AngularRenderScanOverlay {
           ${this.panelField("Change detection", entry.cdStrategy ?? "unknown")}
           ${this.panelField("Cycle #", String(entry.latestCycleId))}
         </div>
+        <div class="panel-field">
+          <span class="panel-label">DOM Mutation Type</span>
+          <span class="panel-value" style="text-transform: capitalize;">${escapeHtml(entry.mutationType ?? "none")}</span>
+        </div>
+        ${
+          entry.renderCause
+            ? `
+        <div class="panel-field" style="grid-column: span 2; background: rgba(59, 130, 246, 0.05); border: 1px dashed rgba(59, 130, 246, 0.2); border-radius: 6px; padding: 6px 10px; margin-bottom: 6px;">
+          <span class="panel-label" style="color: #3b82f6; font-weight: 600;">Render Cause Chain</span>
+          <span class="panel-value" style="font-family: inherit; font-size: 9px; line-height: 1.4; margin-top: 2px;">
+            <strong>${escapeHtml(entry.renderCause.trigger.replace("signal:", "signal ").replace("zone:", "zone "))}</strong>${entry.renderCause.source ? ` &rarr; ${escapeHtml(entry.renderCause.source)}` : ""}
+            ${
+              entry.renderCause.stack && entry.renderCause.stack.length > 0
+                ? `<div style="margin-top: 4px; padding-left: 10px;">
+                    ${entry.renderCause.stack.slice(0, 3).map(f => `<div style="font-family: monospace; font-size: 8px; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">└─ ${escapeHtml(f)}</div>`).join("")}
+                   </div>`
+                : ""
+            }
+          </span>
+        </div>`
+            : ""
+        }
         ${
           entry.isOnPushCandidate
             ? `
@@ -2026,6 +2158,10 @@ export class AngularRenderScanOverlay {
         }
       </section>
     `;
+  }
+
+  private currentDetailsEntry(): AngularRenderEntry | undefined {
+    return this.hoveredEntry ?? this.selectedEntry;
   }
 
   private panelField(label: string, value: string): string {
@@ -2810,6 +2946,14 @@ export class AngularRenderScanOverlay {
         </div>
       </div>
     `;
+  }
+
+  private signalsPanelHtml(): string {
+    return "";
+  }
+
+  private costPanelHtml(): string {
+    return "";
   }
 }
 

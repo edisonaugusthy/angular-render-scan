@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { finishCycle, recordComponentCheck, registerComponent, resetStats, startCycle, getWastedStats, getLeakedComponents } from './stats';
+import {
+  finishCycle,
+  recordComponentCheck,
+  registerComponent,
+  resetStats,
+  startCycle,
+  getWastedStats,
+  getLeakedComponents,
+  getComponentCostEntries,
+  getRegisteredComponentEntries
+} from './stats';
 import { getResolvedOptions, resetOptionsForTest, setResolvedOptions } from '../domain/options';
 
 describe('stats', () => {
@@ -90,5 +100,63 @@ describe('stats', () => {
 
     document.body.append(element);
     expect(getLeakedComponents().length).toBe(0);
+  });
+
+  it('returns connected registered components for picker hit testing', () => {
+    const root = document.createElement('app-root');
+    const child = document.createElement('app-child');
+    root.append(child);
+    document.body.append(root);
+
+    registerComponent({ id: 'root', name: 'RootComponent', element: root, selector: 'app-root' });
+    registerComponent({ id: 'child', name: 'ChildComponent', element: child, selector: 'app-child', parentId: 'root' });
+
+    expect(getRegisteredComponentEntries().map((entry) => entry.name)).toEqual([
+      'RootComponent',
+      'ChildComponent'
+    ]);
+
+    child.remove();
+    expect(getRegisteredComponentEntries().map((entry) => entry.name)).toEqual([
+      'RootComponent'
+    ]);
+  });
+
+  it('calculates component cost entries and ranks them by total duration', () => {
+    const first = document.createElement('div');
+    const second = document.createElement('div');
+    document.body.append(first, second);
+    registerComponent({ id: 'first', name: 'FirstComponent', element: first });
+    registerComponent({ id: 'second', name: 'SecondComponent', element: second });
+    const cycleId = startCycle();
+
+    recordComponentCheck('first', 10, cycleId);
+    recordComponentCheck('second', 40, cycleId);
+    finishCycle(cycleId, 10, 20);
+
+    const costEntries = getComponentCostEntries();
+    expect(costEntries).toHaveLength(2);
+    expect(costEntries[0].name).toBe('SecondComponent');
+    expect(costEntries[0].costPercentage).toBe(80);
+    expect(costEntries[1].name).toBe('FirstComponent');
+    expect(costEntries[1].costPercentage).toBe(20);
+  });
+
+  it('calculates wastedCdStats inside finishCycle', () => {
+    const first = document.createElement('div');
+    const second = document.createElement('div');
+    document.body.append(first, second);
+    registerComponent({ id: 'first', name: 'FirstComponent', element: first });
+    registerComponent({ id: 'second', name: 'SecondComponent', element: second });
+    const cycleId = startCycle();
+
+    recordComponentCheck('first', 10, cycleId, { mutationType: 'none' });
+    recordComponentCheck('second', 20, cycleId, { mutationType: 'text' });
+    const cycle = finishCycle(cycleId, 10, 20);
+
+    expect(cycle.wastedCdStats).toBeDefined();
+    expect(cycle.wastedCdStats?.checked).toBe(2);
+    expect(cycle.wastedCdStats?.changed).toBe(1);
+    expect(cycle.wastedCdStats?.wasteScore).toBe(50);
   });
 });
