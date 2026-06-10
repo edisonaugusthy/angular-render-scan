@@ -1,5 +1,6 @@
 export interface AngularDebugSummary {
   available: boolean;
+  version?: string;
   componentName?: string;
   ownerName?: string;
   directiveNames: string[];
@@ -16,9 +17,15 @@ type AngularDebugGlobals = {
 };
 
 export function getAngularDebugSummary(element: Element): AngularDebugSummary {
+  const version = versionFromDom(element);
   const ng = getAngularGlobals();
   if (!ng) {
-    return { available: false, directiveNames: [], listenerNames: [] };
+    return {
+      available: false,
+      version,
+      directiveNames: [],
+      listenerNames: [],
+    };
   }
 
   const component = safeCall(() => ng.getComponent?.(element));
@@ -29,6 +36,7 @@ export function getAngularDebugSummary(element: Element): AngularDebugSummary {
 
   return {
     available: true,
+    version,
     componentName: nameOf(component),
     ownerName: nameOf(owner),
     directiveNames: directives.map(nameOf).filter(isPresent),
@@ -50,6 +58,14 @@ function getAngularGlobals(): AngularDebugGlobals | undefined {
   }
 
   return ng;
+}
+
+function versionFromDom(element: Element): string | undefined {
+  return (
+    element.closest("[ng-version]")?.getAttribute("ng-version") ||
+    document.querySelector("[ng-version]")?.getAttribute("ng-version") ||
+    undefined
+  );
 }
 
 function safeCall<T>(read: () => T): T | undefined {

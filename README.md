@@ -8,11 +8,11 @@ Angular Render Scan is a visual debugging overlay for Angular change detection. 
 
 ## Versions
 
-| Package | Version |
-|---|---|
-| Angular | `^22.0.0` |
-| `angular-render-scan` | `0.1.8` |
-| `angular-render-scan-cli` | `0.1.5` |
+| Package                   | Version   |
+| ------------------------- | --------- |
+| Angular                   | `^22.0.0` |
+| `angular-render-scan`     | `0.1.8`   |
+| `angular-render-scan-cli` | `0.1.5`   |
 
 ## What it shows
 
@@ -50,17 +50,17 @@ npx angular-render-scan-cli --help
 Add the provider to your Angular bootstrap config.
 
 ```ts
-import { bootstrapApplication } from '@angular/platform-browser';
-import { provideAngularRenderScan } from 'angular-render-scan';
-import { AppComponent } from './app/app.component';
+import { bootstrapApplication } from "@angular/platform-browser";
+import { provideAngularRenderScan } from "angular-render-scan";
+import { AppComponent } from "./app/app.component";
 
 bootstrapApplication(AppComponent, {
   providers: [
     provideAngularRenderScan({
       enabled: true,
-      animationSpeed: 'fast'
-    })
-  ]
+      animationSpeed: "fast",
+    }),
+  ],
 });
 ```
 
@@ -79,12 +79,12 @@ provideAngularRenderScan({
   enabled: true,
   showToolbar: true,
   showFPS: true,
-  animationSpeed: 'fast',
+  animationSpeed: "fast",
   maxLabelCount: 20,
   maxRecordedCycles: 30,
   showCopyPrompt: true,
-  promptContext: 'Angular app using signals and OnPush components',
-  log: false
+  promptContext: "Angular app using signals and OnPush components",
+  log: false,
 });
 ```
 
@@ -114,8 +114,8 @@ import {
   getZonePollutionEvents,
   scan,
   setOptions,
-  stop
-} from 'angular-render-scan';
+  stop,
+} from "angular-render-scan";
 
 scan();
 setOptions({ enabled: false });
@@ -139,14 +139,14 @@ The toolbar shows render count, FPS, latest cycle time, slowest component, trigg
 
 Useful shortcuts:
 
-| Shortcut | Action |
-|---|---|
-| `Alt+Shift+S` | Toggle scanner |
-| `Alt+Shift+D` | Toggle Details Mode |
+| Shortcut      | Action                     |
+| ------------- | -------------------------- |
+| `Alt+Shift+S` | Toggle scanner             |
+| `Alt+Shift+D` | Toggle Details Mode        |
 | `Alt+Shift+C` | Copy AI performance prompt |
-| `Alt+Shift+X` | Clear stats |
-| `Alt+Shift+T` | Toggle toolbar |
-| `Escape` | Close open panels |
+| `Alt+Shift+X` | Clear stats                |
+| `Alt+Shift+T` | Toggle toolbar             |
+| `Escape`      | Close open panels          |
 
 ## Details and AI Prompt
 
@@ -157,17 +157,19 @@ Use `Copy Slow Issues Prompt` to copy a focused prompt for an AI coding assistan
 ## Playwright Audit
 
 ```ts
-import { test, expect } from '@playwright/test';
-import { startRenderAudit } from 'angular-render-scan';
+import { test, expect } from "@playwright/test";
+import { startRenderAudit } from "angular-render-scan";
 
-test('no render regression', async ({ page }) => {
-  await page.goto('/');
+test("no render regression", async ({ page }) => {
+  await page.goto("/");
 
   const audit = await startRenderAudit(page);
-  await page.click('button.expensive-operation');
+  await page.click("button.expensive-operation");
   const report = await audit.stop();
 
-  expect(await report.maxDurationFor('ProductCardComponent')).toBeLessThan(16.7);
+  expect(await report.maxDurationFor("ProductCardComponent")).toBeLessThan(
+    16.7,
+  );
   expect(await report.wastedRenderPercentage()).toBeLessThan(20);
   expect(await report.budgetViolations()).toHaveLength(0);
 });
@@ -179,7 +181,7 @@ Angular Render Scan is intended for development and demo debugging. Provider mod
 
 ```ts
 provideAngularRenderScan({
-  dangerouslyForceRunInProduction: true
+  dangerouslyForceRunInProduction: true,
 });
 ```
 

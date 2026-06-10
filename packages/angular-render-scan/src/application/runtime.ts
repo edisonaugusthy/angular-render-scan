@@ -9,7 +9,10 @@ import {
   getOnPushCandidates as statsGetOnPushCandidates,
   getReferentialInstability as statsGetReferentialInstability,
   getCdGraph as statsGetCdGraph,
-  clearStats
+  clearStats,
+  getComponentCostEntries,
+  getRegisteredComponentEntries,
+  registerGetRenderCauseCallback
 } from './stats';
 import type {
   AngularRenderCycle,
@@ -22,8 +25,18 @@ import type {
   SessionExportData,
   WastedStats,
   ZonePollutionEvent,
-  CdGraph
+  CdGraph,
+  RenderCause,
+  SignalDependencyGraph,
+  ComponentCostEntry,
+  SignalDependencyNode,
+  SignalDependencyEdge
 } from '../domain/entities';
+
+// Register callback for stats to query render cause to avoid circular imports
+registerGetRenderCauseCallback((name) => {
+  return findRenderCauseForComponent(name, activeCycleTrigger);
+});
 
 let overlay: AngularRenderScanOverlay | undefined;
 let activeCycleId = 0;
@@ -34,9 +47,19 @@ let recentCycles: AngularRenderCycle[] = [];
 let activeSessionBudgetViolations: BudgetViolation[] = [];
 let activeZonePollutionEvents: ZonePollutionEvent[] = [];
 
+// v0.2 state tracking
+let activeCycleTrigger: CdTriggerAttribution | undefined;
+let recentSignalWrites: { name: string; action: 'set' | 'update'; stack?: string[]; timestamp: number; isWasted: boolean }[] = [];
+let activeCheckingComponentId: string | null = null;
+let activeCheckingComponentName: string | null = null;
+let activeComputedSignalName: string | null = null;
+const dependencyEdges = new Set<string>();
+const signalUpdateCounts = new Map<string, { total: number; wasted: number; kind: 'signal' | 'computed' }>();
+
 // Lazily-loaded Zone tracker references (avoid importing in test/non-Zone envs)
 let _resolveTrigger: (() => CdTriggerAttribution) | null = null;
 let _resetCycleTrigger: (() => void) | null = null;
+let _notifySignalWrite: (() => void) | null = null;
 
 async function ensureZoneTracker() {
   if (_resolveTrigger) return;
@@ -44,6 +67,7 @@ async function ensureZoneTracker() {
     const mod = await import('../infrastructure/angular/zone-tracker');
     _resolveTrigger = mod.resolveTriggerAttribution;
     _resetCycleTrigger = mod.resetCycleTriggerState;
+    _notifySignalWrite = mod.notifySignalWrite;
   } catch {
     // Zone tracker unavailable
   }
@@ -99,6 +123,15 @@ export function beginCycle(): number {
   scan();
   activeCycleId = startCycle();
   activeCycleStartedAt = performance.now();
+
+  // Resolve trigger at the start of the cycle (when tick starts)
+  let trigger: CdTriggerAttribution | undefined;
+  if (_resolveTrigger) {
+    trigger = _resolveTrigger();
+  }
+  activeCycleTrigger = trigger;
+  _resetCycleTrigger?.();
+
   options.onCycleStart?.();
   return activeCycleId;
 }
@@ -127,13 +160,11 @@ export function endCycle(cycleId = activeCycleId): AngularRenderCycle | undefine
   const cycle = finishCycle(cycleId, activeCycleStartedAt, finishedAt, options);
 
   // ─── CD Trigger Attribution ───────────────────────────────────────────────
-  let trigger: CdTriggerAttribution | undefined;
-  if (_resolveTrigger) {
-    trigger = _resolveTrigger();
+  const trigger = activeCycleTrigger;
+  if (trigger) {
     cycle.trigger = trigger;
     cycle.isZonePollution = trigger.isZonePollution;
   }
-  _resetCycleTrigger?.();
 
   // ─── Zone Pollution Detection ─────────────────────────────────────────────
   if (trigger?.isZonePollution && cycle.entries.length > 0) {
@@ -295,11 +326,208 @@ export function getRecording(): AngularRenderCycle[] {
   return recentCycles.slice();
 }
 
+export function getRegisteredComponents(): AngularRenderEntry[] {
+  return getRegisteredComponentEntries();
+}
+
 export function clearRecording(): void {
   recentCycles = [];
   activeZonePollutionEvents = [];
   activeSessionBudgetViolations = [];
+  recentSignalWrites = [];
+  dependencyEdges.clear();
+  signalUpdateCounts.clear();
+  activeCheckingComponentId = null;
+  activeCheckingComponentName = null;
+  activeComputedSignalName = null;
+  activeCycleTrigger = undefined;
   clearStats();
+}
+
+// ─── v0.2 Signal dependency & cause tracking logic ────────────────────────────
+
+export function setActiveCheckingComponent(id: string | null, name: string | null): void {
+  activeCheckingComponentId = id;
+  activeCheckingComponentName = name;
+}
+
+export function setActiveComputedSignal(name: string | null): void {
+  activeComputedSignalName = name;
+}
+
+export function recordSignalRead(name: string, kind: 'signal' | 'computed'): void {
+  if (!signalUpdateCounts.has(name)) {
+    signalUpdateCounts.set(name, { total: 0, wasted: 0, kind });
+  }
+
+  let consumer: string | null = null;
+  let consumerKind: 'component' | 'computed' | null = null;
+
+  if (activeComputedSignalName) {
+    consumer = activeComputedSignalName;
+    consumerKind = 'computed';
+  } else if (activeCheckingComponentName) {
+    consumer = activeCheckingComponentName;
+    consumerKind = 'component';
+  }
+
+  if (consumer && consumer !== name) {
+    const edgeKey = `${name}->${consumer}`;
+    dependencyEdges.add(edgeKey);
+
+    if (consumerKind === 'computed' && !signalUpdateCounts.has(consumer)) {
+      signalUpdateCounts.set(consumer, { total: 0, wasted: 0, kind: 'computed' });
+    }
+  }
+}
+
+export function recordSignalWrite(name: string, action: 'set' | 'update', stack: string[], isWasted: boolean): void {
+  if (recentSignalWrites.length > 0) {
+    const last = recentSignalWrites[recentSignalWrites.length - 1];
+    if (last.name === name && last.action === 'update' && action === 'set' && Date.now() - last.timestamp < 2) {
+      return;
+    }
+  }
+
+  recentSignalWrites.push({
+    name,
+    action,
+    stack,
+    timestamp: Date.now(),
+    isWasted
+  });
+  if (recentSignalWrites.length > 200) {
+    recentSignalWrites = recentSignalWrites.slice(-200);
+  }
+
+  const stats = signalUpdateCounts.get(name) || { total: 0, wasted: 0, kind: 'signal' };
+  stats.total += 1;
+  if (isWasted) {
+    stats.wasted += 1;
+  }
+  signalUpdateCounts.set(name, stats);
+
+  // Notify the zone tracker
+  _notifySignalWrite?.();
+}
+
+function isSignalDependent(consumer: string, producer: string): boolean {
+  if (consumer === producer) return true;
+
+  const adj = new Map<string, string[]>();
+  for (const edge of dependencyEdges) {
+    const [from, to] = edge.split('->');
+    if (!adj.has(from)) adj.set(from, []);
+    adj.get(from)!.push(to);
+  }
+
+  const visited = new Set<string>();
+  const queue = [producer];
+  while (queue.length > 0) {
+    const curr = queue.shift()!;
+    if (curr === consumer) return true;
+    if (visited.has(curr)) continue;
+    visited.add(curr);
+
+    const next = adj.get(curr) || [];
+    for (const n of next) {
+      if (!visited.has(n)) {
+        queue.push(n);
+      }
+    }
+  }
+  return false;
+}
+
+export function findRenderCauseForComponent(componentName: string, cycleTrigger: CdTriggerAttribution | undefined): RenderCause | undefined {
+  if (!cycleTrigger) return undefined;
+
+  if (cycleTrigger.source === 'signal:write') {
+    const now = Date.now();
+    const possibleWrites = recentSignalWrites
+      .filter(w => now - w.timestamp < 1000)
+      .reverse();
+
+    for (const write of possibleWrites) {
+      if (isSignalDependent(componentName, write.name)) {
+        return {
+          trigger: 'signal:write',
+          source: write.name,
+          stack: write.stack,
+          timestamp: write.timestamp
+        };
+      }
+    }
+
+    if (possibleWrites.length > 0) {
+      const write = possibleWrites[0];
+      return {
+        trigger: 'signal:write',
+        source: write.name,
+        stack: write.stack,
+        timestamp: write.timestamp
+      };
+    }
+  }
+
+  return {
+    trigger: cycleTrigger.source,
+    source: cycleTrigger.detail,
+    stack: cycleTrigger.callSite ? [cycleTrigger.callSite] : undefined,
+    timestamp: Date.now()
+  };
+}
+
+export function getRenderCause(component: string | Element): RenderCause | null {
+  const name = typeof component === 'string' ? component : component.tagName.toLowerCase();
+  
+  // Find the component's entry from the last cycle or stats
+  for (let i = recentCycles.length - 1; i >= 0; i--) {
+    const entry = recentCycles[i].entries.find(e => e.name === name || e.selector?.includes(name));
+    if (entry && entry.renderCause) {
+      return entry.renderCause;
+    }
+  }
+  return null;
+}
+
+export function getSignalDependencyGraph(): SignalDependencyGraph {
+  const nodes: SignalDependencyNode[] = [];
+  const edges: SignalDependencyEdge[] = [];
+
+  const nodeNames = new Set<string>();
+  for (const [name, stats] of signalUpdateCounts.entries()) {
+    nodeNames.add(name);
+    nodes.push({
+      id: name,
+      name,
+      kind: stats.kind,
+      updateCount: stats.total,
+      wastedCount: stats.wasted
+    });
+  }
+
+  for (const edge of dependencyEdges) {
+    const [from, to] = edge.split('->');
+    nodeNames.add(from);
+    nodeNames.add(to);
+    edges.push({ fromId: from, toId: to });
+  }
+
+  for (const name of nodeNames) {
+    if (!signalUpdateCounts.has(name)) {
+      const isComponent = !name.includes('.') && /^[A-Z]/.test(name);
+      nodes.push({
+        id: name,
+        name,
+        kind: isComponent ? 'component' : 'signal',
+        updateCount: 0,
+        wastedCount: 0
+      });
+    }
+  }
+
+  return { nodes, edges };
 }
 
 // ─── New public exports ────────────────────────────────────────────────────────
@@ -568,4 +796,8 @@ export function getSessionData(): SessionExportData {
   };
 }
 
-export { statsGetWastedStats as getWastedStats, statsGetLeakedComponents as getLeakedComponents };
+export function setResolvedTriggerForTest(trigger: CdTriggerAttribution | undefined): void {
+  activeCycleTrigger = trigger;
+}
+
+export { statsGetWastedStats as getWastedStats, statsGetLeakedComponents as getLeakedComponents, getComponentCostEntries as getComponentCostAnalysis };

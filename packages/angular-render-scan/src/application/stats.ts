@@ -8,7 +8,9 @@ import type {
   WaterfallEntry,
   OnPushCandidate,
   ReferentialInstabilityReport,
-  CdTriggerSource
+  CdTriggerSource,
+  RenderCause,
+  ComponentCostEntry
 } from '../domain/entities';
 import { analyzeOnPushCandidates } from './onpush-analyzer';
 import { getReferentialInstabilityReports, resetReferentialStability, clearReferentialStabilityStats } from './referential-stability';
@@ -24,12 +26,21 @@ interface ComponentStats extends AngularRenderScanRegisteredComponent {
   wastedChecks: number;
   inputChangeCount: number;
   lastTrigger?: CdTriggerSource;
+  templateChanges: number;
+  renderCause?: RenderCause;
 }
 
 let cycleId = 0;
 let cycleStartedAt = 0;
 let activeCycleWaterfall: WaterfallEntry[] = [];
 const components = new Map<string, ComponentStats>();
+
+// Callback to resolve render cause from runtime to avoid circular dependency
+let getRenderCauseCallback: ((componentName: string) => RenderCause | undefined) | null = null;
+
+export function registerGetRenderCauseCallback(cb: (componentName: string) => RenderCause | undefined): void {
+  getRenderCauseCallback = cb;
+}
 
 // Track MutationObservers for connected elements to classify mutation types
 const observers = new Map<string, { observer: MutationObserver, lastMutation: AngularRenderMutationType }>();
@@ -45,6 +56,7 @@ export function registerComponent(component: AngularRenderScanRegisteredComponen
     latestCycleId: existing?.latestCycleId ?? 0,
     latestDetails: existing?.latestDetails ?? {},
     wastedChecks: existing?.wastedChecks ?? 0,
+    templateChanges: existing?.templateChanges ?? 0,
     inputChangeCount: existing?.inputChangeCount ?? 0,
     cdStrategy: component.cdStrategy ?? existing?.cdStrategy ?? 'unknown',
     parentId: component.parentId ?? existing?.parentId ?? null
@@ -108,10 +120,17 @@ export function recordComponentCheck(
   stats.latestCycleId = currentCycleId;
   if (lastTrigger) stats.lastTrigger = lastTrigger;
 
-  // Track wasted checks
+  // Track wasted checks vs template changes
   const isWasted = details.mutationType === 'none';
   if (isWasted) {
     stats.wastedChecks += 1;
+  } else {
+    stats.templateChanges = (stats.templateChanges || 0) + 1;
+  }
+
+  // Resolve render cause using runtime callback
+  if (getRenderCauseCallback) {
+    stats.renderCause = getRenderCauseCallback(stats.name);
   }
 
   // Track input changes
@@ -184,6 +203,10 @@ export function finishCycle(
 
   const waterfall = [...activeCycleWaterfall];
 
+  const checked = entries.length;
+  const changed = entries.filter((e) => e.mutationType !== 'none').length;
+  const wasteScore = checked === 0 ? 0 : Math.round(((checked - changed) / checked) * 100);
+
   return {
     id,
     startedAt,
@@ -192,7 +215,12 @@ export function finishCycle(
     renderedCount: entries.length,
     slowest: entries[0],
     entries,
-    waterfall
+    waterfall,
+    wastedCdStats: {
+      checked,
+      changed,
+      wasteScore
+    }
   };
 }
 
@@ -218,7 +246,9 @@ export function clearStats(): void {
     stats.latestCycleId = 0;
     stats.latestDetails = {};
     stats.wastedChecks = 0;
+    stats.templateChanges = 0;
     stats.inputChangeCount = 0;
+    stats.renderCause = undefined;
   }
   for (const state of observers.values()) {
     state.lastMutation = 'none';
@@ -241,6 +271,12 @@ export function getWastedStats(): { totalChecks: number; wastedChecks: number; w
 export function getLeakedComponents(): AngularRenderEntry[] {
   return [...components.values()]
     .filter((stats) => !stats.element.isConnected)
+    .map(toEntry);
+}
+
+export function getRegisteredComponentEntries(): AngularRenderEntry[] {
+  return [...components.values()]
+    .filter((stats) => stats.element.isConnected)
     .map(toEntry);
 }
 
@@ -284,6 +320,27 @@ export function getCdGraph(): CdGraph {
   return buildCdGraph(data);
 }
 
+export function getComponentCostEntries(): ComponentCostEntry[] {
+  const totalDurationAll = [...components.values()].reduce((sum, c) => sum + c.totalDuration, 0);
+  
+  return [...components.values()]
+    .map(c => {
+      const totalDuration = c.totalDuration;
+      const averageDuration = c.totalChecks === 0 ? 0 : totalDuration / c.totalChecks;
+      const costPercentage = totalDurationAll === 0 ? 0 : Math.round((totalDuration / totalDurationAll) * 100);
+      
+      return {
+        name: c.name,
+        selector: c.selector ?? (c.element ? selectorFor(c.element) : ''),
+        totalDuration,
+        averageDuration,
+        renderCount: c.totalChecks,
+        costPercentage
+      };
+    })
+    .sort((a, b) => b.totalDuration - a.totalDuration);
+}
+
 function toEntry(stats: ComponentStats): AngularRenderEntry {
   const count = stats.totalChecks;
   const wastedChecks = stats.wastedChecks || 0;
@@ -310,7 +367,9 @@ function toEntry(stats: ComponentStats): AngularRenderEntry {
     mutationType: stats.latestDetails.mutationType ?? 'none',
     cdStrategy: stats.cdStrategy ?? 'unknown',
     isOnPushCandidate,
-    parentId: stats.parentId ?? null
+    parentId: stats.parentId ?? null,
+    renderCause: stats.renderCause,
+    templateChanges: stats.templateChanges ?? 0
   };
 }
 

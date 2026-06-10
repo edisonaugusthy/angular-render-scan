@@ -9,6 +9,7 @@ import {
   getSessionData,
   getWastedStats,
   getLeakedComponents,
+  getRegisteredComponents,
   getOnPushCandidates,
   getReferentialInstability,
   getZonePollutionEvents,
@@ -31,6 +32,7 @@ interface ActiveHighlight {
 }
 
 const TOOLBAR_POSITION_KEY = "angular-render-scan:toolbar-position";
+const TOOLBAR_COMPACT_KEY = "angular-render-scan:toolbar-compact";
 
 const TOOLBAR_CSS = `
   :host {
@@ -43,9 +45,12 @@ const TOOLBAR_CSS = `
     --ars-border: rgba(15, 23, 42, 0.08);
     --ars-color: #0f172a;
     --ars-label: #64748b;
-    --ars-panel-bg: rgba(255, 255, 255, 0.96);
-    --ars-card-bg: #f8fafc;
-    --ars-shadow: 0 1px 3px rgba(0,0,0,0.02), 0 10px 30px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255,255,255,0.6);
+    --ars-panel-bg: rgba(255, 255, 255, 0.94);
+    --ars-card-bg: rgba(248, 250, 252, 0.86);
+    --ars-chip-bg: rgba(255, 255, 255, 0.72);
+    --ars-chip-border: rgba(15, 23, 42, 0.07);
+    --ars-accent-soft: rgba(37, 99, 235, 0.1);
+    --ars-shadow: 0 18px 48px rgba(15, 23, 42, 0.12), 0 1px 2px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255,255,255,0.7);
   }
   
   :host(.dark) {
@@ -53,9 +58,12 @@ const TOOLBAR_CSS = `
     --ars-border: rgba(255, 255, 255, 0.1);
     --ars-color: #f8fafc;
     --ars-label: #94a3b8;
-    --ars-panel-bg: rgba(15, 23, 42, 0.96);
-    --ars-card-bg: #1e293b;
-    --ars-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 10px 30px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+    --ars-panel-bg: rgba(15, 23, 42, 0.94);
+    --ars-card-bg: rgba(30, 41, 59, 0.84);
+    --ars-chip-bg: rgba(255, 255, 255, 0.07);
+    --ars-chip-border: rgba(255, 255, 255, 0.09);
+    --ars-accent-soft: rgba(96, 165, 250, 0.14);
+    --ars-shadow: 0 18px 48px rgba(0,0,0,0.38), 0 1px 2px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.08);
   }
 
   .toolbar {
@@ -66,12 +74,12 @@ const TOOLBAR_CSS = `
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 7px;
+    gap: 6px;
     width: auto;
     max-width: calc(100vw - 32px);
     padding: 6px;
-    border: 1px solid rgba(15, 23, 42, 0.1);
-    border-radius: 13px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 12px;
     background:
       linear-gradient(135deg, rgba(255,255,255,0.97), rgba(248,250,252,0.92)),
       var(--ars-bg);
@@ -82,7 +90,7 @@ const TOOLBAR_CSS = `
     color: var(--ars-color);
     font: 500 11px/1.2 ui-sans-serif, system-ui, -apple-system, sans-serif;
     pointer-events: auto;
-    backdrop-filter: blur(18px) saturate(1.25);
+    backdrop-filter: blur(20px) saturate(1.2);
     cursor: grab;
     user-select: none;
     transition: box-shadow 0.2s ease, border-color 0.2s ease;
@@ -97,7 +105,7 @@ const TOOLBAR_CSS = `
       inset 0 1px 0 rgba(255,255,255,0.08);
   }
   .toolbar:hover {
-    border-color: rgba(37, 99, 235, 0.22);
+    border-color: rgba(37, 99, 235, 0.2);
     box-shadow:
       0 16px 40px rgba(15, 23, 42, 0.16),
       0 2px 8px rgba(15, 23, 42, 0.08),
@@ -105,6 +113,11 @@ const TOOLBAR_CSS = `
   }
   .toolbar:active {
     cursor: grabbing;
+  }
+  .toolbar.disabled {
+    opacity: 0.82;
+    pointer-events: auto;
+    cursor: grab;
   }
   .toolbar.disabled {
     gap: 0;
@@ -116,8 +129,10 @@ const TOOLBAR_CSS = `
   }
   .toolbar-switch {
     display: inline-flex;
+    flex-direction: column;
     align-items: center;
-    padding: 6px 7px;
+    gap: 2px;
+    padding: 3px 6px 5px;
     border-radius: 9px;
     background: rgba(15, 23, 42, 0.045);
     box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.055);
@@ -132,6 +147,8 @@ const TOOLBAR_CSS = `
     border-radius: 999px;
     background: transparent;
     box-shadow: none;
+    min-width: 0;
+    gap: 6px;
   }
   .toolbar-main {
     display: flex;
@@ -141,6 +158,27 @@ const TOOLBAR_CSS = `
     min-width: 0;
     max-width: calc(100vw - 230px);
     overflow: visible;
+  }
+  .toolbar.compact .toolbar-main {
+    max-width: calc(100vw - 168px);
+  }
+  .toolbar-extended {
+    display: flex;
+    align-items: stretch;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  .toolbar.compact .toolbar-extended {
+    display: none;
+  }
+  .toolbar.expanded .metric {
+    min-width: 56px;
+    padding: 6px 7px;
+  }
+  .toolbar.expanded .metric.slowest-metric {
+    min-width: 106px;
+    max-width: 128px;
+    flex-basis: 118px;
   }
   .toolbar-actions {
     display: flex;
@@ -155,7 +193,34 @@ const TOOLBAR_CSS = `
   :host(.dark) .toolbar-actions {
     border-left-color: rgba(255, 255, 255, 0.08);
   }
-  .switch, .details-toggle, .clear-btn, .action-btn, .panel-close, .panel-copy-btn {
+  .toolbar.compact .toolbar-actions {
+    gap: 4px;
+  }
+  .toolbar-size-toggle {
+    min-width: 30px;
+    justify-content: center;
+  }
+  .toolbar-actions .toolbar-size-toggle {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    padding: 0;
+  }
+  .toolbar.compact .toolbar-size-toggle {
+    min-width: 30px;
+  }
+  .toolbar-picker-toggle {
+    display: inline-grid;
+    place-items: center;
+  }
+  .toolbar-picker-toggle svg,
+  .toolbar-size-toggle svg {
+    width: 14px;
+    height: 14px;
+    display: block;
+    stroke: currentColor;
+  }
+  .switch, .details-toggle, .clear-btn, .action-btn {
     cursor: pointer;
   }
   .switch {
@@ -202,8 +267,8 @@ const TOOLBAR_CSS = `
   }
   .track {
     position: relative;
-    width: 32px;
-    height: 18px;
+    width: 28px;
+    height: 16px;
     border-radius: 999px;
     background: #e2e8f0;
     transition: background 0.15s ease;
@@ -213,8 +278,8 @@ const TOOLBAR_CSS = `
     position: absolute;
     top: 2px;
     left: 2px;
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     border-radius: 999px;
     background: #ffffff;
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.15);
@@ -224,7 +289,7 @@ const TOOLBAR_CSS = `
     background: #2563eb;
   }
   input:checked + .track::after {
-    transform: translateX(14px);
+    transform: translateX(12px);
   }
   .switch-text {
     display: none;
@@ -234,33 +299,53 @@ const TOOLBAR_CSS = `
   .metric {
     display: grid;
     gap: 3px;
-    min-width: 60px;
+    min-width: 62px;
     flex: 0 0 auto;
     padding: 7px 8px;
-    border-radius: 9px;
-    background: rgba(255, 255, 255, 0.62);
+    border: 1px solid var(--ars-chip-border);
+    border-radius: 8px;
+    background: var(--ars-chip-bg);
     box-shadow:
-      inset 0 0 0 1px rgba(15, 23, 42, 0.055),
-      inset 0 1px 0 rgba(255, 255, 255, 0.55);
-    transition: background 0.15s ease, box-shadow 0.15s ease;
+      inset 0 1px 0 rgba(255, 255, 255, 0.5),
+      0 1px 2px rgba(15, 23, 42, 0.025);
+    transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
   }
   .metric:hover {
     background: rgba(255, 255, 255, 0.9);
+    border-color: rgba(37, 99, 235, 0.16);
     box-shadow:
-      inset 0 0 0 1px rgba(37, 99, 235, 0.18),
+      inset 0 1px 0 rgba(255, 255, 255, 0.62),
       0 3px 8px rgba(15, 23, 42, 0.07);
   }
   :host(.dark) .metric {
-    background: rgba(255, 255, 255, 0.055);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.075);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   }
   :host(.dark) .metric:hover {
     background: rgba(255, 255, 255, 0.09);
+    border-color: rgba(96, 165, 250, 0.22);
   }
   .metric.slowest-metric {
     min-width: 128px;
     max-width: 160px;
     flex: 0 0 140px;
+  }
+  .angular-version-chip {
+    flex: 0 0 auto;
+    max-width: 38px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 1px 4px;
+    border: 1px solid rgba(37, 99, 235, 0.16);
+    border-radius: 999px;
+    background: rgba(37, 99, 235, 0.08);
+    color: #2563eb;
+    font: 850 7px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    white-space: nowrap;
+  }
+  :host(.dark) .angular-version-chip {
+    border-color: rgba(96, 165, 250, 0.22);
+    background: rgba(96, 165, 250, 0.12);
+    color: #93c5fd;
   }
   .slowest-metric .value {
     display: block;
@@ -278,7 +363,7 @@ const TOOLBAR_CSS = `
     cursor: pointer;
     transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
     border-radius: 9px;
-    padding: 7px 8px;
+    padding: 6px 7px;
     margin: 0;
     user-select: none;
     display: inline-grid;
@@ -315,7 +400,7 @@ const TOOLBAR_CSS = `
     border: 1px solid var(--ars-border);
     border-radius: 10px;
     padding: 10px;
-    backdrop-filter: blur(16px);
+    backdrop-filter: blur(20px) saturate(1.15);
     box-shadow: var(--ars-shadow);
     display: grid;
     gap: 6px;
@@ -437,31 +522,15 @@ const TOOLBAR_CSS = `
     opacity: 1;
     transform: translateX(-50%) translateY(0);
   }
-  .panel-actions [data-tooltip]::after {
-    left: auto;
-    right: 0;
-    transform: translateY(4px);
-  }
-  .panel-actions [data-tooltip]::before {
-    left: auto;
-    right: 16px;
-    transform: translateY(4px);
-  }
-  .panel-actions [data-tooltip]:hover::after,
-  .panel-actions [data-tooltip]:hover::before,
-  .panel-actions [data-tooltip]:focus-within::after,
-  .panel-actions [data-tooltip]:focus-within::before {
-    transform: translateY(0);
-  }
-  .clear-btn, .action-btn, .panel-close, .panel-copy-btn {
-    background: rgba(15, 23, 42, 0.035);
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    border-radius: 9px;
+  .clear-btn, .action-btn {
+    background: var(--ars-chip-bg);
+    border: 1px solid var(--ars-chip-border);
+    border-radius: 8px;
     padding: 7px 10px;
     font: inherit;
     font-weight: 600;
     color: var(--ars-label);
-    transition: all 0.15s ease;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
   }
   .toolbar-actions .clear-btn,
   .toolbar-actions .action-btn,
@@ -486,18 +555,18 @@ const TOOLBAR_CSS = `
     opacity: 0;
     pointer-events: none;
   }
-  .clear-btn:hover, .action-btn:hover, .panel-close:hover, .panel-copy-btn:hover {
-    background: rgba(37, 99, 235, 0.075);
-    border-color: rgba(37, 99, 235, 0.2);
+  .clear-btn:hover, .action-btn:hover {
+    background: var(--ars-accent-soft);
+    border-color: rgba(37, 99, 235, 0.22);
     color: #2563eb;
   }
-  .clear-btn:active, .action-btn:active, .panel-close:active, .panel-copy-btn:active {
-    transform: translateY(0);
+  .clear-btn:active, .action-btn:active {
+    filter: brightness(0.98);
   }
   .action-btn.active {
-    border-color: rgba(37, 99, 235, 0.2);
+    border-color: rgba(37, 99, 235, 0.24);
     color: #2563eb;
-    background: rgba(37, 99, 235, 0.05);
+    background: var(--ars-accent-soft);
   }
   .status {
     position: absolute;
@@ -505,11 +574,11 @@ const TOOLBAR_CSS = `
     right: 16px;
     z-index: 2147483647;
     color: #ffffff;
-    background: #2563eb;
+    background: linear-gradient(135deg, #2563eb, #0891b2);
     font-size: 10px;
     font-weight: 700;
     padding: 4px 8px;
-    border-radius: 6px;
+    border-radius: 999px;
     box-shadow: 
       0 1px 3px rgba(0,0,0,0.02),
       0 8px 20px rgba(37, 99, 235, 0.15);
@@ -533,18 +602,19 @@ const TOOLBAR_CSS = `
     bottom: 72px;
     z-index: 2147483647;
     width: min(280px, calc(100vw - 32px));
-    display: grid;
-    gap: 6px;
-    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding: 11px;
     border: 1px solid var(--ars-border);
     border-top: 3px solid #3b82f6;
-    border-radius: 10px;
+    border-radius: 11px;
     background: var(--ars-panel-bg);
     box-shadow: var(--ars-shadow);
     color: var(--ars-color);
     font: 500 10px/1.3 Inter, system-ui, -apple-system, sans-serif;
     pointer-events: auto;
-    backdrop-filter: blur(16px);
+    backdrop-filter: blur(20px) saturate(1.15);
     transition: border-top-color 0.2s ease;
     max-height: calc(100vh - 100px);
     overflow-y: auto;
@@ -553,24 +623,23 @@ const TOOLBAR_CSS = `
   .inspect-panel.medium { border-top-color: #f59e0b; }
   .inspect-panel.fast { border-top-color: #10b981; }
   .panel-head {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: 8px;
     border-bottom: 1px solid var(--ars-border);
     padding-bottom: 6px;
   }
+  .panel-head-main {
+    min-width: 0;
+  }
   .panel-title {
     font-size: 12px;
     font-weight: 800;
     color: var(--ars-color);
-    overflow-wrap: anywhere;
-  }
-  .panel-actions {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex-shrink: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .severity {
     display: inline-flex;
@@ -600,33 +669,77 @@ const TOOLBAR_CSS = `
   }
   .panel-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 4px;
     margin: 2px 0;
   }
-  .panel-grid .panel-field {
+  .panel-grid .panel-field,
+  .panel-summary-metrics .panel-field {
     background: var(--ars-card-bg);
     border: 1px solid var(--ars-border);
     border-radius: 6px;
-    padding: 4px;
+    padding: 5px 4px;
     text-align: center;
     display: flex;
     flex-direction: column;
     justify-content: center;
-    min-height: 36px;
+    min-height: 30px;
+    min-width: 0;
   }
-  .panel-grid .panel-label {
+  .panel-grid .panel-label,
+  .panel-summary-metrics .panel-label {
     font-size: 8px;
     font-weight: 700;
     color: var(--ars-label);
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
-  .panel-grid .panel-value {
+  .panel-grid .panel-value,
+  .panel-summary-metrics .panel-value {
     font-size: 10px;
     font-weight: 700;
     color: var(--ars-color);
     margin-top: 1px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .panel-summary {
+    display: grid;
+    gap: 4px;
+    margin: 2px 0;
+  }
+  .panel-summary-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .summary-metric,
+  .summary-context {
+    min-width: 0;
+    background: var(--ars-card-bg);
+    border: 1px solid var(--ars-border);
+    border-radius: 6px;
+    padding: 5px 6px;
+  }
+  .summary-metric {
+    display: grid;
+    gap: 1px;
+    text-align: center;
+  }
+  .summary-context {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 24px;
+  }
+  .summary-context .panel-label {
+    flex: 0 0 auto;
+  }
+  .summary-context .panel-value {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .inspect-panel .panel-field:not(.panel-grid .panel-field) {
     border-top: 1px solid var(--ars-border);
@@ -661,11 +774,10 @@ const TOOLBAR_CSS = `
     display: flex;
     flex-direction: column;
     gap: 2px;
-    transition: all 0.15s ease;
+    transition: border-color 0.15s ease, background 0.15s ease;
   }
   .rec-card:hover {
     border-color: rgba(15, 23, 42, 0.1);
-    transform: translateY(-0.5px);
   }
   .rec-card.slow {
     border-left-color: #ef4444;
@@ -721,6 +833,7 @@ export class AngularRenderScanOverlay {
   private selectedEntry?: AngularRenderEntry;
   private hoveredEntry?: AngularRenderEntry;
   private hoveredRect?: DOMRect;
+  private hoverPointer?: { x: number; y: number };
   private detailsHoverCursorActive = false;
   private detailsMode = false;
   private copyStatus = "";
@@ -755,6 +868,7 @@ export class AngularRenderScanOverlay {
   private budgetViolations: BudgetViolation[] = [];
   private showAlertsPanel = false;
   private showWaterfallPanel = false;
+  private compactToolbar = true;
   private keyListener?: (e: KeyboardEvent) => void;
   private budgetViolationListener?: (e: Event) => void;
 
@@ -764,6 +878,7 @@ export class AngularRenderScanOverlay {
   ) {
     this.options = options;
     this.restoreToolbarPosition();
+    this.restoreToolbarCompact();
     const recorded = getRecording();
     if (recorded && recorded.length > 0) {
       this.latestCycle = recorded[recorded.length - 1];
@@ -822,6 +937,7 @@ export class AngularRenderScanOverlay {
           this.detailsMode = !this.detailsMode;
           this.hoveredEntry = undefined;
           this.hoveredRect = undefined;
+          this.hoverPointer = undefined;
           this.setDetailsHoverCursor(false);
           if (!this.detailsMode) this.selectedEntry = undefined;
           this.renderToolbar();
@@ -840,6 +956,7 @@ export class AngularRenderScanOverlay {
             this.selectedEntry = undefined;
             this.hoveredEntry = undefined;
             this.hoveredRect = undefined;
+            this.hoverPointer = undefined;
             this.last30CycleDurations.length = 0;
             this.showWaterfallPanel = false;
             this.renderToolbar();
@@ -876,6 +993,7 @@ export class AngularRenderScanOverlay {
       if (!this.detailsMode || !this.options.enabled) {
         this.hoveredEntry = undefined;
         this.hoveredRect = undefined;
+        this.hoverPointer = undefined;
         this.setDetailsHoverCursor(false);
         return;
       }
@@ -885,49 +1003,28 @@ export class AngularRenderScanOverlay {
         return;
       }
 
-      const hovered = this.findClickedEntry(e.clientX, e.clientY);
+      const previousHoveredId = this.hoveredEntry?.id;
+      const hovered = this.findPickerEntry(e.clientX, e.clientY);
       this.hoveredEntry = hovered?.entry;
       this.hoveredRect = hovered?.rect;
+      this.hoverPointer = hovered ? { x: e.clientX, y: e.clientY } : undefined;
       this.setDetailsHoverCursor(Boolean(hovered));
+      if (
+        previousHoveredId !== this.hoveredEntry?.id ||
+        this.hoveredEntry
+      ) {
+        this.renderToolbar();
+      }
     };
 
     this.globalClickListener = (e: MouseEvent) => {
-      if (!this.detailsMode && !e.metaKey && !e.ctrlKey) return;
-      if (!this.options.enabled) return;
+      if (!this.detailsMode || !this.options.enabled) return;
       if (this.isOverlayTarget(e.target)) return;
-
-      const x = e.clientX;
-      const y = e.clientY;
-      const clicked =
-        this.findClickedEntry(x, y) ??
-        (this.hoveredEntry && this.hoveredRect
-          ? {
-              entry: this.hoveredEntry,
-              rect: this.hoveredRect,
-              expiresAt: 0,
-            }
-          : undefined);
-
-      if (clicked) {
-        e.preventDefault();
-        e.stopPropagation();
-        this.selectedEntry = clicked.entry;
-        this.renderToolbar();
-
-        const globalNg = (window as any).ng;
-        if (globalNg && globalNg.getComponent) {
-          const component = globalNg.getComponent(clicked.entry.element);
-          console.info(
-            `[angular-render-scan] Inspecting <${clicked.entry.name}>:`,
-            component || clicked.entry.element,
-          );
-        } else {
-          console.info(
-            `[angular-render-scan] Inspecting <${clicked.entry.name}> element:`,
-            clicked.entry.element,
-          );
-        }
-      }
+      this.hoveredEntry = undefined;
+      this.hoveredRect = undefined;
+      this.hoverPointer = undefined;
+      this.setDetailsHoverCursor(false);
+      this.renderToolbar();
     };
 
     document.addEventListener("mousemove", this.globalMoveListener, {
@@ -944,10 +1041,10 @@ export class AngularRenderScanOverlay {
       const event = e as MouseEvent | TouchEvent;
       const target = event.target as HTMLElement;
       if (
-        target.closest(".switch") ||
-        target.closest(".clear-btn") ||
-        target.closest(".action-btn") ||
-        target.closest(".panel-close")
+        this.options.enabled &&
+        (target.closest(".switch") ||
+          target.closest(".clear-btn") ||
+          target.closest(".action-btn"))
       ) {
         return; // Don't drag if clicking buttons
       }
@@ -1110,6 +1207,26 @@ export class AngularRenderScanOverlay {
     }
   }
 
+  private restoreToolbarCompact(): void {
+    try {
+      const raw = globalThis.localStorage?.getItem(TOOLBAR_COMPACT_KEY);
+      this.compactToolbar = raw === null ? true : raw !== "false";
+    } catch {
+      this.compactToolbar = true;
+    }
+  }
+
+  private saveToolbarCompact(): void {
+    try {
+      globalThis.localStorage?.setItem(
+        TOOLBAR_COMPACT_KEY,
+        String(this.compactToolbar),
+      );
+    } catch {
+      // Ignore storage failures.
+    }
+  }
+
   private saveToolbarPosition(): void {
     try {
       globalThis.localStorage?.setItem(
@@ -1240,6 +1357,45 @@ export class AngularRenderScanOverlay {
     return this.smallestContainingHighlight(latestHighlights, x, y);
   }
 
+  private findPickerEntry(x: number, y: number): ActiveHighlight | undefined {
+    const hitElement = document.elementFromPoint(x, y);
+    if (!hitElement || this.isOverlayTarget(hitElement)) {
+      return undefined;
+    }
+
+    const matches = getRegisteredComponents()
+      .flatMap((entry) => {
+        if (!entry.element.isConnected || !entry.element.contains(hitElement)) {
+          return [];
+        }
+
+        const rect = entry.element.getBoundingClientRect();
+        if (
+          rect.width <= 0 ||
+          rect.height <= 0 ||
+          x < rect.left ||
+          x > rect.right ||
+          y < rect.top ||
+          y > rect.bottom
+        ) {
+          return [];
+        }
+
+        return [{ entry, rect, expiresAt: 0 }];
+      })
+      .sort((a, b) => area(a.rect) - area(b.rect));
+
+    if (
+      matches.length === 1 &&
+      matches[0].entry.parentId === null &&
+      hitElement !== matches[0].entry.element
+    ) {
+      return undefined;
+    }
+
+    return matches[0] ?? this.findClickedEntry(x, y);
+  }
+
   private smallestContainingHighlight(
     highlights: ActiveHighlight[],
     x: number,
@@ -1355,6 +1511,7 @@ export class AngularRenderScanOverlay {
     this.selectedEntry = undefined;
     this.hoveredEntry = undefined;
     this.hoveredRect = undefined;
+    this.hoverPointer = undefined;
     this.detailsMode = false;
     this.showCpuDetails = false;
     this.showWaterfallPanel = false;
@@ -1446,8 +1603,10 @@ export class AngularRenderScanOverlay {
 
     const cycle = this.latestCycle;
     const displayedFps = this.latestFps || this.fps.value;
+    const compactToolbar = this.compactToolbar || !this.options.enabled;
     const cpuVal = this.cpu.value;
     const cpuClass = cpuVal > 50 ? "cpu-high" : cpuVal > 20 ? "cpu-medium" : "";
+    const angularVersion = this.angularVersionFromDom();
 
     const wasted = getWastedStats();
     const leaks = getLeakedComponents();
@@ -1534,6 +1693,8 @@ export class AngularRenderScanOverlay {
         </span>`
         : "";
 
+    const cycleWasteText = cycle?.wastedCdStats ? ` (${cycle.wastedCdStats.wasteScore}% waste)` : '';
+
     const htmlChanged = this.replaceToolbarHtml(
       container,
       `
@@ -1544,25 +1705,27 @@ export class AngularRenderScanOverlay {
       ${this.options.enabled ? this.onPushPanelHtml(onPushCandidates) : ""}
       ${this.options.enabled ? this.zonePollutionPanelHtml(pollutionEvents) : ""}
       ${this.options.enabled ? this.cdGraphPanelHtml() : ""}
-      <div class="toolbar ${this.options.enabled ? "" : "disabled"}" style="right: ${this.toolbarX}px; bottom: ${this.toolbarY}px;">
+      <div class="toolbar ${this.options.enabled ? (compactToolbar ? "compact" : "expanded") : "disabled"}" style="right: ${this.toolbarX}px; bottom: ${this.toolbarY}px;">
         <div class="toolbar-switch">
+          ${angularVersion ? `<span class="angular-version-chip" title="Angular ${escapeHtml(angularVersion)}">ng ${escapeHtml(angularVersion)}</span>` : ""}
           <label class="switch" data-tooltip="Enable or pause render scanning.">
             <input type="checkbox" ${this.options.enabled ? "checked" : ""} aria-label="Angular Render Scan enabled" />
             <span class="track" aria-hidden="true"></span>
             <span class="switch-text">${this.options.enabled ? "On" : "Off"}</span>
           </label>
         </div>
-        ${
-          this.options.enabled
-            ? `
+        ${this.options.enabled ? `
         <div class="toolbar-main">
           ${this.metric("FPS", this.options.showFPS ? String(displayedFps) + " fps" : "-", this.getFpsClass(displayedFps))}
           <span class="metric cpu-interactive ${this.showCpuDetails ? "active" : ""}" data-tooltip="Main-thread busy %. High values mean JS is blocking the render pipeline. Click for details.">
             <span class="label">CPU</span>
             <span class="value ${cpuClass}">${cpuVal}%</span>
           </span>
-          ${this.metric("Last cycle", cycle ? `${cycle.duration.toFixed(1)}ms` : "-")}
           ${sparklineSvg}
+        </div>
+        ${compactToolbar ? "" : `
+        <div class="toolbar-extended">
+          ${this.metric("Last cycle", cycle ? `${cycle.duration.toFixed(1)}ms${cycleWasteText}` : "-")}
           <span class="metric graph-toggle ${this.showGraphPanel ? "active" : ""}" style="cursor:pointer;" data-tooltip="Live CD render graph — shows how change detection propagates through the component tree. Click to toggle.">
             <span class="label">CD Graph</span>
             <span class="value" style="color:#06b6d4;">Graph</span>
@@ -1574,18 +1737,21 @@ export class AngularRenderScanOverlay {
           ${onPushChip}
           ${pollutionChip}
         </div>
+        `}
         <span class="toolbar-actions">
-          <label class="details-toggle ${this.detailsMode ? "active" : ""}" data-tooltip="Check Details, hover a captured component to highlight it, then click to pin its recommendation panel. Uncheck to clear the panel.">
-            <input class="details-checkbox" type="checkbox" ${this.detailsMode ? "checked" : ""} aria-label="Enable component details panel" />
-            <span aria-hidden="true">⌖</span>
-          </label>
+          ${compactToolbar ? "" : `
           ${this.options.showCopyPrompt ? '<button class="action-btn copy-prompt-btn" aria-label="Copy prompt for slow render issues" data-tooltip="Copy an AI-ready prompt with only the captured slow/error component issues and their runtime evidence."><span aria-hidden="true">✦</span></button>' : ""}
           <button class="action-btn export-btn" aria-label="Export session data" data-tooltip="Download the current profiling session data as a .json file."><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"></path><path d="m7 9 5 5 5-5"></path><path d="M5 19h14"></path></svg></button>
           <button class="clear-btn" aria-label="Clear stats" data-tooltip="Clear current render stats."><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 19 5-5"></path><path d="m9 15 5 5"></path><path d="M15 4 4 15"></path><path d="m14 5 5 5"></path><path d="m18 11-7-7"></path></svg></button>
+          `}
+          <button class="action-btn details-toggle toolbar-picker-toggle ${this.detailsMode ? "active" : ""}" aria-pressed="${this.detailsMode}" aria-label="Enable component details panel" data-tooltip="Use the picker to inspect a component on hover. Clicks continue to the app.">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4l7 16 2.8-6.2L20 11 4 4z"></path><path d="M13.8 13.8 20 20"></path></svg>
+          </button>
+          <button class="action-btn toolbar-size-toggle" aria-pressed="${compactToolbar ? "false" : "true"}" aria-label="${compactToolbar ? "Show extended view" : "Show compact view"}" data-tooltip="${compactToolbar ? "Show extended view" : "Show small view"}">
+            ${compactToolbar ? '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"></path></svg>' : '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"></path></svg>'}
+          </button>
         </span>
-        `
-            : ""
-        }
+        ` : ""}
         ${this.copyStatus ? `<span class="status" aria-live="polite">${escapeHtml(this.copyStatus)}</span>` : ""}
       </div>
     `,
@@ -1613,6 +1779,39 @@ export class AngularRenderScanOverlay {
       "click",
       () => {
         this.showCpuDetails = !this.showCpuDetails;
+        this.renderToolbar();
+      },
+      { once: true },
+    );
+
+    toolbarEl?.querySelector(".toolbar-size-toggle")?.addEventListener(
+      "click",
+      () => {
+        this.compactToolbar = !this.compactToolbar;
+        this.closeInteractivePanels();
+        this.showWaterfallPanel = false;
+        this.showAlertsPanel = false;
+        this.showOnPushPanel = false;
+        this.showZonePollutionPanel = false;
+        this.showGraphPanel = false;
+        this.graphCollapsed = false;
+        this.saveToolbarCompact();
+        this.renderToolbar();
+        this.clampToolbarPosition();
+        this.saveToolbarPosition();
+      },
+      { once: true },
+    );
+
+    toolbarEl?.querySelector(".toolbar-picker-toggle")?.addEventListener(
+      "click",
+      () => {
+        this.detailsMode = !this.detailsMode;
+        this.selectedEntry = undefined;
+        this.hoveredEntry = undefined;
+        this.hoveredRect = undefined;
+        this.hoverPointer = undefined;
+        this.setDetailsHoverCursor(false);
         this.renderToolbar();
       },
       { once: true },
@@ -1659,6 +1858,7 @@ export class AngularRenderScanOverlay {
           this.selectedEntry = undefined;
           this.hoveredEntry = undefined;
           this.hoveredRect = undefined;
+          this.hoverPointer = undefined;
           this.last30CycleDurations.length = 0;
           this.showWaterfallPanel = false;
           this.showCpuDetails = false;
@@ -1666,21 +1866,6 @@ export class AngularRenderScanOverlay {
           this.budgetViolations = [];
           this.renderToolbar();
         });
-      },
-      { once: true },
-    );
-
-    toolbarEl?.querySelector(".details-checkbox")?.addEventListener(
-      "change",
-      (event) => {
-        this.detailsMode = (event.target as HTMLInputElement).checked;
-        this.hoveredEntry = undefined;
-        this.hoveredRect = undefined;
-        this.setDetailsHoverCursor(false);
-        if (!this.detailsMode) {
-          this.selectedEntry = undefined;
-        }
-        this.renderToolbar();
       },
       { once: true },
     );
@@ -1718,15 +1903,6 @@ export class AngularRenderScanOverlay {
       { once: true },
     );
 
-    container.querySelector(".panel-close")?.addEventListener(
-      "click",
-      () => {
-        this.selectedEntry = undefined;
-        this.renderToolbar();
-      },
-      { once: true },
-    );
-
     container.querySelector(".waterfall-close-btn")?.addEventListener(
       "click",
       () => {
@@ -1736,28 +1912,13 @@ export class AngularRenderScanOverlay {
       { once: true },
     );
 
-    container.querySelector(".panel-copy-btn")?.addEventListener(
-      "click",
-      async () => {
-        if (!this.selectedEntry) {
-          return;
-        }
-        const copied = await this.copyComponentPrompt(
-          this.selectedEntry,
-          this.latestFps || this.fps.value,
-        );
-        this.setCopyStatus(copied ? "Copied" : "Copy failed");
-      },
-      { once: true },
-    );
-
     container.querySelector(".open-editor-btn")?.addEventListener(
       "click",
       async () => {
-        if (!this.selectedEntry) {
+        const entry = this.currentDetailsEntry();
+        if (!entry) {
           return;
         }
-        const entry = this.selectedEntry;
         const query = `class ${entry.name}`;
 
         try {
@@ -1889,6 +2050,13 @@ export class AngularRenderScanOverlay {
     return fps < 50 ? "fps-drop" : "";
   }
 
+  private angularVersionFromDom(): string | undefined {
+    return (
+      document.querySelector("[ng-version]")?.getAttribute("ng-version") ||
+      undefined
+    );
+  }
+
   private replaceToolbarHtml(toolbar: HTMLElement, html: string): boolean {
     if (this.lastToolbarHtml === html) {
       return false;
@@ -1900,7 +2068,7 @@ export class AngularRenderScanOverlay {
   }
 
   private inspectPanelHtml(): string {
-    const entry = this.selectedEntry;
+    const entry = this.currentDetailsEntry();
     if (!entry) {
       return "";
     }
@@ -1914,10 +2082,17 @@ export class AngularRenderScanOverlay {
         (cycle) =>
           `#${cycle.id} ${cycle.entries.find((candidate) => candidate.id === entry.id)?.latestDuration.toFixed(1)}ms`,
       );
-    const isSlow = entry.latestDuration >= this.slowThresholdMs;
     const severity = this.severityFor(entry);
     const cost = this.costFor(entry);
     const recommendations = this.recommendationsFor(entry);
+    const triggerReason = entry.reason ?? "unknown";
+    const mutationType = entry.mutationType ?? "none";
+    const cdStrategy = entry.cdStrategy ?? "unknown";
+    const angular = getAngularDebugSummary(entry.element);
+    const frameworkLabel = angular.version
+      ? `${cdStrategy} · Angular ${angular.version}`
+      : cdStrategy;
+    const panelStyle = this.inspectPanelPositionStyle(entry);
     const changedInputs = entry.changedInputs?.length
       ? entry.changedInputs
           .map((input) => {
@@ -1945,27 +2120,48 @@ export class AngularRenderScanOverlay {
       : "";
 
     return `
-      <section class="inspect-panel ${severity.kind}" style="right: ${this.toolbarX}px; bottom: ${this.toolbarY + 60}px; max-width: 300px;" aria-label="Component recommendation panel">
+      <section class="inspect-panel ${severity.kind}" style="${panelStyle}" aria-label="Component recommendation panel">
         ${leakWarningHtml}
         <div class="panel-head">
-          <div>
+          <div class="panel-head-main">
             <div class="panel-title">${escapeHtml(entry.name)}</div>
             ${openLinkHtml}
             <div><span class="severity ${severity.kind}">${escapeHtml(severity.label)}</span></div>
           </div>
-          <div class="panel-actions">
-            ${isSlow ? '<button class="panel-copy-btn" aria-label="Copy prompt for this slow component issue" data-tooltip="Copy an AI-ready prompt scoped only to this slow component and its local evidence.">Copy AI Fix Prompt</button>' : ""}
-            <button class="panel-close" aria-label="Close component details">Close</button>
+        </div>
+        <div class="panel-summary">
+          <div class="panel-summary-metrics">
+            ${this.panelField("Last", `${entry.latestDuration.toFixed(1)}ms`)}
+            ${this.panelField("Avg", `${entry.averageDuration.toFixed(1)}ms`)}
+            ${this.panelField("Renders", `${entry.count} · #${entry.latestCycleId}`)}
+          </div>
+          <div class="summary-context">
+            <span class="panel-label">CD</span>
+            <span class="panel-value">${escapeHtml(frameworkLabel)} · ${escapeHtml(triggerReason)}</span>
+          </div>
+          <div class="summary-context">
+            <span class="panel-label">DOM</span>
+            <span class="panel-value" style="text-transform: capitalize;">${escapeHtml(mutationType)}</span>
           </div>
         </div>
-        <div class="panel-grid">
-          ${this.panelField("Last render", `${entry.latestDuration.toFixed(1)}ms`)}
-          ${this.panelField("Avg render", `${entry.averageDuration.toFixed(1)}ms`)}
-          ${this.panelField("Total renders", String(entry.count))}
-          ${this.panelField("Trigger reason", entry.reason ?? "unknown")}
-          ${this.panelField("Change detection", entry.cdStrategy ?? "unknown")}
-          ${this.panelField("Cycle #", String(entry.latestCycleId))}
-        </div>
+        ${
+          entry.renderCause
+            ? `
+        <div class="panel-field" style="grid-column: span 2; background: rgba(59, 130, 246, 0.05); border: 1px dashed rgba(59, 130, 246, 0.2); border-radius: 6px; padding: 6px 10px; margin-bottom: 6px;">
+          <span class="panel-label" style="color: #3b82f6; font-weight: 600;">Render Cause Chain</span>
+          <span class="panel-value" style="font-family: inherit; font-size: 9px; line-height: 1.4; margin-top: 2px;">
+            <strong>${escapeHtml(entry.renderCause.trigger.replace("signal:", "signal ").replace("zone:", "zone "))}</strong>${entry.renderCause.source ? ` &rarr; ${escapeHtml(entry.renderCause.source)}` : ""}
+            ${
+              entry.renderCause.stack && entry.renderCause.stack.length > 0
+                ? `<div style="margin-top: 4px; padding-left: 10px;">
+                    ${entry.renderCause.stack.slice(0, 3).map(f => `<div style="font-family: monospace; font-size: 8px; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">└─ ${escapeHtml(f)}</div>`).join("")}
+                   </div>`
+                : ""
+            }
+          </span>
+        </div>`
+            : ""
+        }
         ${
           entry.isOnPushCandidate
             ? `
@@ -2026,6 +2222,72 @@ export class AngularRenderScanOverlay {
         }
       </section>
     `;
+  }
+
+  private currentDetailsEntry(): AngularRenderEntry | undefined {
+    return this.hoveredEntry ?? this.selectedEntry;
+  }
+
+  private inspectPanelPositionStyle(entry: AngularRenderEntry): string {
+    const margin = 12;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const panelWidth = Math.min(280, Math.max(220, viewportWidth - margin * 2));
+    const panelHeightEstimate = Math.min(
+      300,
+      Math.max(180, viewportHeight - margin * 2),
+    );
+    const rect =
+      this.hoveredEntry?.id === entry.id
+        ? this.hoveredRect
+        : entry.element?.getBoundingClientRect();
+    const pointer =
+      this.hoveredEntry?.id === entry.id ? this.hoverPointer : undefined;
+
+    let left = viewportWidth - this.toolbarX - panelWidth;
+    let top = viewportHeight - this.toolbarY - panelHeightEstimate - 60;
+
+    if (rect) {
+      const anchorX = pointer?.x ?? rect.left + rect.width / 2;
+      const anchorY = pointer?.y ?? rect.top + rect.height / 2;
+      const isLargeTarget =
+        rect.width > panelWidth + 48 || rect.height > panelHeightEstimate;
+
+      if (isLargeTarget && pointer) {
+        left =
+          anchorX + margin + panelWidth <= viewportWidth
+            ? anchorX + margin
+            : anchorX - panelWidth - margin;
+        top =
+          anchorY + margin + panelHeightEstimate <= viewportHeight
+            ? anchorY + margin
+            : anchorY - panelHeightEstimate - margin;
+      } else {
+        if (rect.right + margin + panelWidth <= viewportWidth) {
+          left = rect.right + margin;
+        } else if (rect.left - margin - panelWidth >= 0) {
+          left = rect.left - panelWidth - margin;
+        } else {
+          left =
+            anchorX + margin + panelWidth <= viewportWidth
+              ? anchorX + margin
+              : anchorX - panelWidth - margin;
+        }
+
+        top = rect.top;
+        if (rect.height > panelHeightEstimate / 2) {
+          top = anchorY - panelHeightEstimate / 2;
+        }
+      }
+    }
+
+    left = Math.max(margin, Math.min(left, viewportWidth - panelWidth - margin));
+    top = Math.max(
+      margin,
+      Math.min(top, viewportHeight - panelHeightEstimate - margin),
+    );
+
+    return `left: ${Math.round(left)}px; top: ${Math.round(top)}px; right: auto; bottom: auto; width: ${Math.round(panelWidth)}px; max-width: calc(100vw - ${margin * 2}px);`;
   }
 
   private panelField(label: string, value: string): string {
@@ -2501,12 +2763,12 @@ export class AngularRenderScanOverlay {
       .join("");
 
     return `
-      <div class="onpush-panel" style="position: fixed; right: ${panelRight}px; bottom: ${this.toolbarY + 60}px; width: 280px; max-height: 360px; display: flex; flex-direction: column; gap: 8px; background: var(--ars-panel-bg); border: 1px solid var(--ars-border); border-top: 4px solid #7c3aed; border-radius: 12px; padding: 12px; z-index: 2147483647; box-shadow: var(--ars-shadow); pointer-events: auto; backdrop-filter: blur(16px);">
+      <div class="onpush-panel" style="position: fixed; right: ${panelRight}px; bottom: ${this.toolbarY + 60}px; width: 250px; max-height: 300px; display: flex; flex-direction: column; gap: 6px; background: var(--ars-panel-bg); border: 1px solid var(--ars-border); border-top: 3px solid #7c3aed; border-radius: 11px; padding: 10px; z-index: 2147483647; box-shadow: var(--ars-shadow); pointer-events: auto; backdrop-filter: blur(20px) saturate(1.15);">
         <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--ars-color); border-bottom: 1px solid var(--ars-border); padding-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
           <span>⚡ OnPush Candidates</span>
           <button class="onpush-close-btn" style="background: none; border: none; color: var(--ars-label); cursor: pointer; font-size: 14px; font-weight: bold; line-height: 1;">×</button>
         </div>
-        <div style="font-size: 9px; color: var(--ars-label); line-height: 1.4; padding-bottom: 4px;">
+        <div style="font-size: 9px; color: var(--ars-label); line-height: 1.35; padding-bottom: 2px;">
           These components use Default CD with high wasted render rates. Adding <code style="background: rgba(0,0,0,0.06); padding: 1px 3px; border-radius: 3px;">ChangeDetectionStrategy.OnPush</code> could significantly reduce unnecessary checks.
         </div>
         <div style="display: flex; flex-direction: column; gap: 6px; overflow-y: auto; flex: 1;">
@@ -2519,7 +2781,7 @@ export class AngularRenderScanOverlay {
   private zonePollutionPanelHtml(events: ZonePollutionEvent[]): string {
     if (!this.showZonePollutionPanel || events.length === 0) return "";
     const panelRight = this.showOnPushPanel
-      ? this.toolbarX + 298
+      ? this.toolbarX + 260
       : this.toolbarX;
     const items = events
       .slice()
@@ -2553,12 +2815,12 @@ export class AngularRenderScanOverlay {
       .join("");
 
     return `
-      <div class="zone-pollution-panel" style="position: fixed; right: ${panelRight}px; bottom: ${this.toolbarY + 60}px; width: 270px; max-height: 360px; display: flex; flex-direction: column; gap: 8px; background: var(--ars-panel-bg); border: 1px solid var(--ars-border); border-top: 4px solid #f59e0b; border-radius: 12px; padding: 12px; z-index: 2147483647; box-shadow: var(--ars-shadow); pointer-events: auto; backdrop-filter: blur(16px);">
+      <div class="zone-pollution-panel" style="position: fixed; right: ${panelRight}px; bottom: ${this.toolbarY + 60}px; width: 250px; max-height: 300px; display: flex; flex-direction: column; gap: 6px; background: var(--ars-panel-bg); border: 1px solid var(--ars-border); border-top: 3px solid #f59e0b; border-radius: 11px; padding: 10px; z-index: 2147483647; box-shadow: var(--ars-shadow); pointer-events: auto; backdrop-filter: blur(20px) saturate(1.15);">
         <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--ars-color); border-bottom: 1px solid var(--ars-border); padding-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
           <span>⚠ Zone Pollution</span>
           <button class="zone-pollution-close-btn" style="background: none; border: none; color: var(--ars-label); cursor: pointer; font-size: 14px; font-weight: bold; line-height: 1;">×</button>
         </div>
-        <div style="font-size: 9px; color: var(--ars-label); line-height: 1.4; padding-bottom: 4px;">
+        <div style="font-size: 9px; color: var(--ars-label); line-height: 1.35; padding-bottom: 2px;">
           These CD cycles were triggered by async operations with no user interaction — suspected Zone.js pollution. Use <code style="background: rgba(0,0,0,0.06); padding: 1px 3px; border-radius: 3px;">NgZone.runOutsideAngular()</code> to escape Zone.
         </div>
         <div style="display: flex; flex-direction: column; gap: 6px; overflow-y: auto; flex: 1;">
@@ -2623,18 +2885,18 @@ export class AngularRenderScanOverlay {
       const children = childMap.get(node.id) ?? [];
       const stratColor = node.cdStrategy === "OnPush" ? "#10b981" : "#f59e0b";
       const countColor = node.wastedChecks > 0 ? "#ef4444" : "#94a3b8";
-      const indent = depth * 12;
+      const indent = depth * 9;
       const childRows = children.map((c) => renderNode(c, depth + 1)).join("");
       const edgeCount =
         graph.edges.find((e) => e.toId === node.id)?.triggerCount ?? 0;
       return `
         <div style="display:flex;flex-direction:column;">
-          <div style="display:flex;align-items:center;gap:5px;padding:3px 6px 3px ${indent + 6}px;border-radius:4px;transition:background .1s;" onmouseover="this.style.background='rgba(0,0,0,.04)'" onmouseout="this.style.background=''">
-            ${depth > 0 ? `<span style="color:#cbd5e1;font-size:9px;flex-shrink:0;">↳</span>` : ""}
-            <span style="font-size:10px;font-weight:600;color:var(--ars-color);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(node.name)}">${escapeHtml(node.name)}</span>
-            ${edgeCount > 0 ? `<span style="font-size:8px;color:#94a3b8;flex-shrink:0;">${edgeCount}×</span>` : ""}
-            <span style="font-size:8px;font-weight:700;color:${stratColor};flex-shrink:0;border:1px solid ${stratColor};padding:0 3px;border-radius:3px;">${node.cdStrategy === "OnPush" ? "OP" : "D"}</span>
-            <span style="font-size:9px;font-family:monospace;color:${countColor};flex-shrink:0;">${node.renderCount}r${node.wastedChecks > 0 ? ` ${node.wastedChecks}w` : ""}</span>
+          <div style="display:flex;align-items:center;gap:4px;padding:2px 5px 2px ${indent + 5}px;border-radius:4px;transition:background .1s;" onmouseover="this.style.background='rgba(0,0,0,.04)'" onmouseout="this.style.background=''">
+            ${depth > 0 ? `<span style="color:#cbd5e1;font-size:8px;flex-shrink:0;">↳</span>` : ""}
+            <span style="font-size:9px;font-weight:650;color:var(--ars-color);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(node.name)}">${escapeHtml(node.name)}</span>
+            ${edgeCount > 0 ? `<span style="font-size:8px;color:#94a3b8;flex-shrink:0;">${edgeCount}x</span>` : ""}
+            <span style="font-size:7px;font-weight:800;color:${stratColor};flex-shrink:0;border:1px solid ${stratColor};padding:0 2px;border-radius:3px;">${node.cdStrategy === "OnPush" ? "OP" : "D"}</span>
+            <span style="font-size:8px;font-family:monospace;color:${countColor};flex-shrink:0;">${node.renderCount}r${node.wastedChecks > 0 ? `/${node.wastedChecks}w` : ""}</span>
           </div>
           ${childRows}
         </div>
@@ -2653,11 +2915,11 @@ export class AngularRenderScanOverlay {
     const wastedTotal = nodes.reduce((s, n) => s + n.wastedChecks, 0);
 
     return `
-      <div class="cd-graph-panel" style="position:fixed;right:${this.toolbarX}px;bottom:${this.toolbarY + 60}px;width:280px;max-height:${this.graphCollapsed ? "auto" : "400px"};display:flex;flex-direction:column;background:var(--ars-panel-bg);border:1px solid var(--ars-border);border-top:3px solid #06b6d4;border-radius:10px;z-index:2147483647;box-shadow:var(--ars-shadow);pointer-events:auto;backdrop-filter:blur(16px);overflow:hidden;">
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:${this.graphCollapsed ? "none" : "1px solid var(--ars-border)"}>">
-          <div style="display:flex;align-items:center;gap:6px;">
-            <span style="font-size:11px;font-weight:800;color:var(--ars-color);">⬡ CD Render Graph</span>
-            ${nodes.length > 0 ? `<span style="font-size:9px;color:var(--ars-label);">${nodes.length} components</span>` : ""}
+      <div class="cd-graph-panel" style="position:fixed;right:${this.toolbarX}px;bottom:${this.toolbarY + 60}px;width:240px;max-height:${this.graphCollapsed ? "auto" : "300px"};display:flex;flex-direction:column;background:var(--ars-panel-bg);border:1px solid var(--ars-border);border-top:3px solid #06b6d4;border-radius:11px;z-index:2147483647;box-shadow:var(--ars-shadow);pointer-events:auto;backdrop-filter:blur(20px) saturate(1.15);overflow:hidden;">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 8px;border-bottom:${this.graphCollapsed ? "none" : "1px solid var(--ars-border)"}>">
+          <div style="display:flex;align-items:center;gap:5px;min-width:0;">
+            <span style="font-size:10px;font-weight:850;color:var(--ars-color);white-space:nowrap;">CD Graph</span>
+            ${nodes.length > 0 ? `<span style="font-size:8px;color:var(--ars-label);white-space:nowrap;">${nodes.length} cmp</span>` : ""}
           </div>
           <div style="display:flex;align-items:center;gap:4px;">
             <button class="graph-collapse-btn" style="background:none;border:none;color:var(--ars-label);cursor:pointer;font-size:12px;line-height:1;padding:2px 4px;">${this.graphCollapsed ? "▼" : "▲"}</button>
@@ -2667,17 +2929,17 @@ export class AngularRenderScanOverlay {
         ${
           !this.graphCollapsed
             ? `
-        <div style="display:flex;gap:6px;padding:6px 10px;border-bottom:1px solid var(--ars-border);flex-shrink:0;">
-          <span style="font-size:9px;font-weight:700;color:#10b981;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);padding:2px 6px;border-radius:4px;">OnPush: ${onPushCount}</span>
-          <span style="font-size:9px;font-weight:700;color:#f59e0b;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);padding:2px 6px;border-radius:4px;">Default: ${defaultCount}</span>
-          ${wastedTotal > 0 ? `<span style="font-size:9px;font-weight:700;color:#ef4444;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);padding:2px 6px;border-radius:4px;">Wasted: ${wastedTotal}</span>` : ""}
+        <div style="display:flex;gap:4px;padding:5px 8px;border-bottom:1px solid var(--ars-border);flex-shrink:0;overflow:hidden;">
+          <span style="font-size:8px;font-weight:750;color:#10b981;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);padding:1px 5px;border-radius:4px;white-space:nowrap;">OP ${onPushCount}</span>
+          <span style="font-size:8px;font-weight:750;color:#f59e0b;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);padding:1px 5px;border-radius:4px;white-space:nowrap;">D ${defaultCount}</span>
+          ${wastedTotal > 0 ? `<span style="font-size:8px;font-weight:750;color:#ef4444;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);padding:1px 5px;border-radius:4px;white-space:nowrap;">W ${wastedTotal}</span>` : ""}
         </div>
-        <div style="overflow-y:auto;flex:1;padding:4px 4px 8px;">
+        <div style="overflow-y:auto;flex:1;padding:3px 3px 6px;">
           ${treeHtml}
         </div>
-        <div style="padding:6px 10px;border-top:1px solid var(--ars-border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
-          <span style="font-size:9px;color:var(--ars-label);">OP=OnPush D=Default · r=renders w=wasted</span>
-          <button class="graph-refresh-btn" style="font-size:9px;font-weight:700;background:rgba(6,182,212,.1);border:1px solid rgba(6,182,212,.2);color:#06b6d4;border-radius:4px;padding:2px 6px;cursor:pointer;">↺ Refresh</button>
+        <div style="padding:5px 8px;border-top:1px solid var(--ars-border);display:flex;justify-content:space-between;align-items:center;gap:6px;flex-shrink:0;">
+          <span style="font-size:8px;color:var(--ars-label);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">r renders · w wasted</span>
+          <button class="graph-refresh-btn" style="font-size:8px;font-weight:750;background:rgba(6,182,212,.1);border:1px solid rgba(6,182,212,.2);color:#06b6d4;border-radius:4px;padding:1px 5px;cursor:pointer;">Refresh</button>
         </div>
         `
             : ""
@@ -2695,7 +2957,7 @@ export class AngularRenderScanOverlay {
       : this.toolbarX + 120;
     if (waterfall.length === 0) {
       return `
-        <div class="waterfall-panel" style="position: fixed; right: ${rightOffset}px; bottom: ${this.toolbarY + 60}px; width: 300px; background: var(--ars-panel-bg); border: 1px solid var(--ars-border); border-radius: 12px; padding: 12px; z-index: 2147483647; box-shadow: var(--ars-shadow); pointer-events: auto;">
+        <div class="waterfall-panel" style="position: fixed; right: ${rightOffset}px; bottom: ${this.toolbarY + 60}px; width: 260px; background: var(--ars-panel-bg); border: 1px solid var(--ars-border); border-radius: 11px; padding: 10px; z-index: 2147483647; box-shadow: var(--ars-shadow); pointer-events: auto; backdrop-filter: blur(20px) saturate(1.15);">
           <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--ars-label); border-bottom: 1px solid var(--ars-border); padding-bottom: 6px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
             <span>CD Waterfall</span>
             <button class="waterfall-close-btn" style="background: none; border: none; color: var(--ars-label); cursor: pointer; font-size: 12px;">×</button>
@@ -2735,7 +2997,7 @@ export class AngularRenderScanOverlay {
       .join("");
 
     return `
-      <div class="waterfall-panel" style="position: fixed; right: ${rightOffset}px; bottom: ${this.toolbarY + 60}px; width: 300px; max-height: 240px; overflow-y: auto; background: var(--ars-panel-bg); border: 1px solid var(--ars-border); border-radius: 12px; padding: 12px; z-index: 2147483647; box-shadow: var(--ars-shadow); pointer-events: auto;">
+      <div class="waterfall-panel" style="position: fixed; right: ${rightOffset}px; bottom: ${this.toolbarY + 60}px; width: 260px; max-height: 200px; overflow-y: auto; background: var(--ars-panel-bg); border: 1px solid var(--ars-border); border-radius: 11px; padding: 10px; z-index: 2147483647; box-shadow: var(--ars-shadow); pointer-events: auto; backdrop-filter: blur(20px) saturate(1.15);">
         <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--ars-label); border-bottom: 1px solid var(--ars-border); padding-bottom: 6px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
           <span>Waterfall (Cycle #${cycle.id})</span>
           <button class="waterfall-close-btn" style="background: none; border: none; color: var(--ars-label); cursor: pointer; font-size: 12px;">×</button>
@@ -2791,11 +3053,11 @@ export class AngularRenderScanOverlay {
       alertsRight += 170;
     }
     if (this.showWaterfallPanel) {
-      alertsRight += 310;
+      alertsRight += 270;
     }
 
     return `
-      <div class="alerts-panel" style="position: fixed; right: ${alertsRight}px; bottom: ${this.toolbarY + 60}px; width: 280px; max-height: 300px; display: flex; flex-direction: column; gap: 8px; background: var(--ars-panel-bg); border: 1px solid var(--ars-border); border-top: 4px solid #ef4444; border-radius: 12px; padding: 12px; z-index: 2147483647; box-shadow: var(--ars-shadow); pointer-events: auto; backdrop-filter: blur(16px);">
+      <div class="alerts-panel" style="position: fixed; right: ${alertsRight}px; bottom: ${this.toolbarY + 60}px; width: 250px; max-height: 240px; display: flex; flex-direction: column; gap: 6px; background: var(--ars-panel-bg); border: 1px solid var(--ars-border); border-top: 3px solid #ef4444; border-radius: 11px; padding: 10px; z-index: 2147483647; box-shadow: var(--ars-shadow); pointer-events: auto; backdrop-filter: blur(20px) saturate(1.15);">
         <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--ars-color); border-bottom: 1px solid var(--ars-border); padding-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
           <span style="display: inline-flex; align-items: center; gap: 4px;">
             <span>⚠️ Budget Violations</span>
@@ -2810,6 +3072,14 @@ export class AngularRenderScanOverlay {
         </div>
       </div>
     `;
+  }
+
+  private signalsPanelHtml(): string {
+    return "";
+  }
+
+  private costPanelHtml(): string {
+    return "";
   }
 }
 

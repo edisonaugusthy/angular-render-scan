@@ -11,7 +11,9 @@ export {
   getOnPushCandidates,
   getReferentialInstability,
   getZonePollutionEvents,
-  getCdGraph
+  getCdGraph,
+  getSignalDependencyGraph,
+  getComponentCostAnalysis
 } from './application/runtime';
 export {
   AngularRenderScanMarkDirective,
