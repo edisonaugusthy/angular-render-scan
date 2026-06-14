@@ -16,19 +16,53 @@ import type { AngularRenderChangedInput, AngularRenderScanRenderDetails } from '
 const ProfilerEventTemplateUpdateStart = 2;
 const ProfilerEventTemplateUpdateEnd = 3;
 
-function patchSignalsOnInstance(instance: any, compName: string): void {
-  if (!instance || typeof instance !== 'object') return;
-  if (instance.__angularRenderScanPatchedSignals) return;
-  instance.__angularRenderScanPatchedSignals = true;
+// How deep into a component's object graph we walk looking for nested signals.
+const MAX_SIGNAL_PATCH_DEPTH = 3;
 
-  let signalSymbol: symbol | undefined;
-  const getSignalSymbol = (obj: any) => {
-    if (!obj || (typeof obj !== 'object' && typeof obj !== 'function')) return undefined;
-    if (signalSymbol) return signalSymbol;
-    const sym = Reflect.ownKeys(obj).find(k => typeof k === 'symbol' && String(k).includes('SIGNAL'));
-    if (sym) signalSymbol = sym as symbol;
-    return signalSymbol;
-  };
+// Constructor names we must never recurse into. Walking these mutates / wraps
+// Angular framework internals and corrupts them — e.g. reactive-forms controls
+// and router URL trees, whose children are plain-object containers that Angular
+// iterates with Object.keys(). See exclusions in the recursion branch below.
+const FRAMEWORK_CTOR_EXCLUSIONS = [
+  'ElementRef',
+  'ViewContainerRef',
+  'ChangeDetectorRef',
+  'NgZone',
+  'ApplicationRef',
+  'Router',
+  'ActivatedRoute',
+  'UrlTree',
+  'UrlSegment',
+  'UrlSegmentGroup',
+  'AbstractControl',
+  'FormControl',
+  'FormGroup',
+  'FormArray',
+  'FormRecord',
+  'NgControl',
+  'EventEmitter'
+];
+
+// Per-prop scan for the signal symbol. Must NOT be cached across props: a cached
+// symbol would make us treat any later function-valued property as a signal.
+function getSignalSymbol(obj: any): symbol | undefined {
+  if (!obj || (typeof obj !== 'object' && typeof obj !== 'function')) return undefined;
+  const sym = Reflect.ownKeys(obj).find(k => typeof k === 'symbol' && String(k).includes('SIGNAL'));
+  return sym as symbol | undefined;
+}
+
+export function patchSignalsOnInstance(
+  instance: any,
+  compName: string,
+  visited: WeakSet<object> = new WeakSet(),
+  depth = 0
+): void {
+  if (!instance || typeof instance !== 'object') return;
+  // Track visited objects in a side WeakSet instead of writing a marker onto the
+  // instance. Writing an enumerable property pollutes Object.keys() of any object
+  // we touch, which breaks Angular containers (form controls, URL segments).
+  if (visited.has(instance)) return;
+  visited.add(instance);
 
   const keys = Object.getOwnPropertyNames(instance);
   for (const key of keys) {
@@ -68,7 +102,12 @@ function patchSignalsOnInstance(instance: any, compName: string): void {
           }
         } as any;
 
-        wrapped.__angularRenderScanPatched = true;
+        Object.defineProperty(wrapped, '__angularRenderScanPatched', {
+          value: true,
+          enumerable: false,
+          configurable: true,
+          writable: true
+        });
         wrapped[sym] = internalNode;
         wrapped.toString = originalSignal.toString.bind(originalSignal);
 
@@ -121,21 +160,23 @@ function patchSignalsOnInstance(instance: any, compName: string): void {
 
         instance[key] = wrapped;
       }
-    } else if (typeof prop === 'object' && prop !== null && !Array.isArray(prop)) {
+    } else if (depth < MAX_SIGNAL_PATCH_DEPTH && typeof prop === 'object' && prop !== null && !Array.isArray(prop)) {
+      // Only recurse into class instances that look like view models. Skip
+      // framework internals and plain-object containers (constructor `Object`),
+      // since those are the dictionaries Angular iterates with Object.keys().
       const ctorName = prop.constructor?.name;
       if (
         ctorName &&
+        ctorName !== 'Object' &&
         !ctorName.startsWith('ɵ') &&
-        !ctorName.startsWith('ElementRef') &&
-        !ctorName.startsWith('ViewContainerRef') &&
-        !ctorName.startsWith('ChangeDetectorRef') &&
-        !ctorName.startsWith('NgZone') &&
-        !ctorName.startsWith('ApplicationRef') &&
-        !ctorName.startsWith('Router') &&
-        !ctorName.startsWith('ActivatedRoute') &&
-        !(prop instanceof HTMLElement)
+        !FRAMEWORK_CTOR_EXCLUSIONS.some(name => ctorName.startsWith(name)) &&
+        !(prop instanceof HTMLElement) &&
+        !(prop instanceof Date) &&
+        !(prop instanceof RegExp) &&
+        !(prop instanceof Map) &&
+        !(prop instanceof Set)
       ) {
-        patchSignalsOnInstance(prop, ctorName);
+        patchSignalsOnInstance(prop, ctorName, visited, depth + 1);
       }
     }
   }
