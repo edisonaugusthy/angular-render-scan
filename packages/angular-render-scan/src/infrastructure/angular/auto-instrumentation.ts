@@ -260,6 +260,9 @@ function summarizeValue(value: unknown): string {
 function readCdStrategy(instance: object): 'OnPush' | 'Default' | 'unknown' {
   const cmp = (instance as any)?.constructor?.ɵcmp;
   if (!cmp) return 'unknown';
+  // Modern Angular exposes the strategy as an explicit boolean.
+  if (cmp.onPush === true) return 'OnPush';
+  if (cmp.onPush === false) return 'Default';
   // changeDetection: 0 = OnPush, 2 = Default
   const cd = cmp.changeDetection;
   if (cd === 0) return 'OnPush';
@@ -333,7 +336,8 @@ export function setupAutoInstrumentation(): void {
           try {
             const element = globalNg.getHostElement(instance);
             if (element && element instanceof Element && !element.hasAttribute('angularRenderScanMark')) {
-              const name = (instance as any).constructor?.name || 'AnonymousComponent';
+              const rawName = (instance as any).constructor?.name || 'AnonymousComponent';
+              const name = rawName.replace(/^_+/, '').replace(/Component$/, '') || rawName;
               const id = `ng-scan-auto-${++nextAutoComponentId}`;
               const cdStrategy = readCdStrategy(instance);
 

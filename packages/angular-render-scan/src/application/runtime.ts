@@ -137,7 +137,8 @@ export function beginCycle(): number {
 }
 
 function getRendersInLastSecond(id: string, now: number): number {
-  let count = 0;
+  // The cycle being finalized is not in recentCycles yet, so include it here.
+  let count = 1;
   for (let i = recentCycles.length - 1; i >= 0; i--) {
     const cycle = recentCycles[i];
     if (now - cycle.finishedAt > 1000) {

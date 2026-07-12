@@ -159,4 +159,21 @@ describe('stats', () => {
     expect(cycle.wastedCdStats?.changed).toBe(1);
     expect(cycle.wastedCdStats?.wasteScore).toBe(50);
   });
+
+  it('keeps cycle waste telemetry independent from display filters', () => {
+    const visible = document.createElement('div');
+    const filtered = document.createElement('div');
+    document.body.append(visible, filtered);
+    registerComponent({ id: 'visible', name: 'VisibleComponent', element: visible });
+    registerComponent({ id: 'filtered', name: 'FilteredComponent', element: filtered });
+    const cycleId = startCycle();
+
+    recordComponentCheck('visible', 12, cycleId, { mutationType: 'text' });
+    recordComponentCheck('filtered', 1, cycleId, { mutationType: 'none' });
+    setResolvedOptions({ minDurationMs: 5 });
+    const cycle = finishCycle(cycleId, 10, 20, getResolvedOptions());
+
+    expect(cycle.entries.map(entry => entry.name)).toEqual(['VisibleComponent']);
+    expect(cycle.wastedCdStats).toEqual({ checked: 2, changed: 1, wasteScore: 50 });
+  });
 });

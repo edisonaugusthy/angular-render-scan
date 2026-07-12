@@ -808,6 +808,303 @@ const TOOLBAR_CSS = `
     margin: 0;
   }
 
+  /* Compact product shell inspired by React Scan, using Angular's visual language. */
+  :host {
+    --ars-angular: #f6375b;
+    --ars-angular-soft: rgba(246, 55, 91, 0.14);
+    --ars-bg: rgba(18, 18, 22, 0.96);
+    --ars-panel-bg: rgba(18, 18, 22, 0.98);
+    --ars-card-bg: rgba(255, 255, 255, 0.045);
+    --ars-chip-bg: rgba(255, 255, 255, 0.055);
+    --ars-chip-border: rgba(255, 255, 255, 0.09);
+    --ars-border: rgba(255, 255, 255, 0.11);
+    --ars-color: #f7f7f8;
+    --ars-label: #9898a3;
+    --ars-shadow: 0 20px 55px rgba(0, 0, 0, 0.46), 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+  :host(:not(.dark)) {
+    --ars-bg: rgba(255, 255, 255, 0.97);
+    --ars-panel-bg: rgba(255, 255, 255, 0.98);
+    --ars-card-bg: #f7f7f9;
+    --ars-chip-bg: #f6f6f8;
+    --ars-chip-border: rgba(20, 20, 25, 0.09);
+    --ars-border: rgba(20, 20, 25, 0.12);
+    --ars-color: #18181c;
+    --ars-label: #71717b;
+    --ars-shadow: 0 20px 55px rgba(20, 20, 25, 0.16), 0 2px 8px rgba(20, 20, 25, 0.08);
+  }
+  .toolbar, :host(.dark) .toolbar {
+    gap: 4px; padding: 5px; border-color: var(--ars-border); border-radius: 10px;
+    background: var(--ars-bg); box-shadow: var(--ars-shadow); color: var(--ars-color);
+  }
+  .toolbar:hover { border-color: rgba(246,55,91,.38); box-shadow: var(--ars-shadow); }
+  .toolbar-switch, :host(.dark) .toolbar-switch {
+    flex-direction: row; gap: 5px; min-height: 30px; padding: 4px 7px;
+    background: var(--ars-angular-soft); box-shadow: inset 0 0 0 1px rgba(246,55,91,.2);
+  }
+  .angular-version-chip, :host(.dark) .angular-version-chip {
+    max-width: 48px; padding: 3px 5px; border: 0; background: transparent;
+    color: #ff8ba1; font-size: 8px;
+  }
+  input:checked + .track { background: var(--ars-angular); }
+  .toolbar-main, .toolbar-extended { gap: 4px; flex-wrap: nowrap; }
+  .metric, :host(.dark) .metric {
+    min-width: 54px; gap: 2px; padding: 5px 7px; border-color: var(--ars-chip-border);
+    border-radius: 7px; background: var(--ars-chip-bg); box-shadow: none;
+  }
+  .metric:hover, :host(.dark) .metric:hover {
+    border-color: rgba(246,55,91,.25); background: rgba(255,255,255,.08); box-shadow: none;
+  }
+  .label { color: var(--ars-label); font-size: 7px; letter-spacing: .08em; }
+  .value { color: var(--ars-color); font-size: 11px; }
+  .toolbar-actions { gap: 3px; border-left-color: var(--ars-border); }
+  .action-btn, .clear-btn, .details-toggle {
+    width: 28px; min-width: 28px; height: 28px; padding: 0; justify-content: center;
+    border-color: transparent; border-radius: 7px; background: transparent; color: #a9a9b2;
+  }
+  .action-btn:hover, .clear-btn:hover, .details-toggle:hover {
+    border-color: rgba(255,255,255,.08); background: rgba(255,255,255,.08); color: #fff;
+  }
+  .details-toggle.active, .action-btn.active {
+    border-color: rgba(246,55,91,.34); background: var(--ars-angular-soft);
+    color: #ff7892; box-shadow: none;
+  }
+  .inspect-panel, .cpu-details-panel, .waterfall-panel, .alerts-panel,
+  .onpush-panel, .zone-pollution-panel, .cd-graph-panel {
+    border-color: var(--ars-border) !important; background: var(--ars-panel-bg) !important;
+    box-shadow: var(--ars-shadow) !important; color: var(--ars-color) !important;
+  }
+  @media (max-width: 720px) {
+    .toolbar { width: auto; max-width: calc(100vw - 16px); right: 8px !important; }
+    .toolbar-main .cpu-interactive { display: none; }
+    .sparkline-toggle { min-width: 72px !important; }
+    .sparkline-toggle svg { width: 64px; }
+  }
+  .toolbar-extended, .toolbar-size-toggle { display: none !important; }
+  .inspect-panel.streamlined {
+    width: min(360px, calc(100vw - 24px)); padding: 0; overflow: hidden;
+    border-radius: 12px; font: 500 11px/1.4 ui-sans-serif, system-ui, sans-serif;
+  }
+  .stream-inspect-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:14px 15px 12px; border-bottom:1px solid var(--ars-border); }
+  .stream-eyebrow, .stream-section-label { color:var(--ars-label); font-size:8px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; }
+  .stream-title { margin-top:2px; color:var(--ars-color); font-size:15px; font-weight:750; letter-spacing:-.02em; }
+  .stream-selector { margin-top:1px; color:var(--ars-label); font:500 9px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .stream-status { padding:4px 7px; border-radius:999px; font-size:8px; font-weight:800; white-space:nowrap; }
+  .stream-status.changed { color:#34d399; background:rgba(52,211,153,.11); }
+  .stream-status.no-change { color:#fbbf24; background:rgba(251,191,36,.11); }
+  .stream-metrics { display:grid; grid-template-columns:repeat(3,1fr); border-bottom:1px solid var(--ars-border); }
+  .stream-metrics > div { display:grid; gap:3px; padding:10px 14px; border-right:1px solid var(--ars-border); }
+  .stream-metrics > div:last-child { border-right:0; }
+  .stream-metrics span, .stream-row > span { color:var(--ars-label); font-size:8px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
+  .stream-metrics strong { color:var(--ars-color); font:750 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .stream-row { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:9px 14px; border-bottom:1px solid var(--ars-border); }
+  .stream-row strong { color:var(--ars-color); font:600 9px ui-monospace, SFMono-Regular, Menlo, monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .stream-changes { display:grid; gap:6px; padding:11px 14px; border-bottom:1px solid var(--ars-border); }
+  .stream-change { display:grid; grid-template-columns:minmax(58px,auto) 1fr auto 1fr; align-items:center; gap:6px; min-width:0; }
+  .stream-change code { color:#ff7892; font:650 9px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .stream-change span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ars-label); font:500 9px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .stream-change b { color:var(--ars-label); }
+  .stream-change em { grid-column:2/-1; color:#fbbf24; font-size:8px; font-style:normal; }
+  .stream-empty-change { padding:10px 14px; border-bottom:1px solid var(--ars-border); color:var(--ars-label); font-size:9px; }
+  .stream-action { margin:10px 12px; padding:9px 10px; border:1px solid var(--ars-border); border-left:2px solid #f6375b; border-radius:7px; background:var(--ars-card-bg); }
+  .stream-action > span { color:#ff7892; font-size:8px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
+  .stream-action.fast { border-left-color:#34d399; }
+  .stream-action.fast > span { color:#34d399; }
+  .stream-action p { margin:3px 0 0; color:var(--ars-color); font-size:10px; line-height:1.45; }
+  .stream-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:9px 12px; border-top:1px solid var(--ars-border); color:var(--ars-label); font-size:9px; }
+  .component-copy-btn { padding:5px 8px; border:1px solid var(--ars-border); border-radius:6px; background:transparent; color:var(--ars-color); font:650 9px inherit; cursor:pointer; }
+  .component-copy-btn:hover { border-color:rgba(246,55,91,.35); background:var(--ars-angular-soft); }
+
+  /* Inspector console: docked to the scanner so hovering never chases a tooltip. */
+  .inspect-panel.inspector-console {
+    padding:0; overflow:hidden; border:1px solid rgba(255,255,255,.12) !important;
+    border-radius:14px; background:#111116 !important;
+    box-shadow:0 28px 80px rgba(0,0,0,.58), 0 0 0 1px rgba(0,0,0,.35) !important;
+    color:#f7f7f8 !important; font:500 11px/1.45 ui-sans-serif,system-ui,-apple-system,sans-serif;
+    transform-origin:bottom right; animation:inspector-enter 140ms cubic-bezier(.2,.8,.2,1);
+  }
+  @keyframes inspector-enter { from { opacity:0; transform:translateY(7px) scale(.985); } to { opacity:1; transform:none; } }
+  .inspector-header { display:flex; align-items:center; justify-content:space-between; gap:16px; min-height:62px; padding:11px 13px; border-bottom:1px solid rgba(255,255,255,.08); background:linear-gradient(180deg,rgba(255,255,255,.035),transparent); }
+  .inspector-identity { display:flex; align-items:center; gap:10px; min-width:0; }
+  .inspector-identity > div { display:grid; min-width:0; }
+  .inspector-identity strong { overflow:hidden; color:#f7f7f8; font-size:13px; font-weight:720; letter-spacing:-.015em; text-overflow:ellipsis; white-space:nowrap; }
+  .inspector-identity span:last-child { overflow:hidden; color:#777782; font:500 9px ui-monospace,SFMono-Regular,Menlo,monospace; text-overflow:ellipsis; white-space:nowrap; }
+  .inspector-status { display:inline-flex; align-items:center; gap:6px; flex:0 0 auto; padding:5px 8px; border:1px solid rgba(255,255,255,.08); border-radius:999px; color:#a4a4ad; background:rgba(255,255,255,.035); font-size:8px; font-weight:700; }
+  .inspector-status i { width:6px; height:6px; border-radius:50%; }
+  .inspector-status.changed i { background:#34d399; box-shadow:0 0 0 3px rgba(52,211,153,.1); }
+  .inspector-status.no-change i { background:#fbbf24; box-shadow:0 0 0 3px rgba(251,191,36,.1); }
+  .inspector-body { display:grid; grid-template-columns:190px minmax(0,1fr); min-height:192px; }
+  .inspector-timing { padding:15px; border-right:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.018); }
+  .inspector-label { display:block; color:#74747e; font-size:8px; font-weight:750; letter-spacing:.09em; text-transform:uppercase; }
+  .inspector-duration { display:flex; align-items:baseline; gap:5px; margin-top:6px; }
+  .inspector-duration strong { color:#fff; font:650 30px/1 ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:-.07em; }
+  .inspector-duration span { color:#777782; font:600 9px ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .inspector-duration-track { height:4px; margin-top:13px; overflow:hidden; border-radius:999px; background:rgba(255,255,255,.07); }
+  .inspector-duration-track i { display:block; height:100%; min-width:2px; border-radius:inherit; background:#34d399; }
+  .inspector-console.medium .inspector-duration-track i { background:#fbbf24; }
+  .inspector-console.slow .inspector-duration-track i { background:#f6375b; }
+  .inspector-threshold { display:flex; justify-content:space-between; margin-top:4px; color:#606069; font:500 7px ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .inspector-mini-stats { display:grid; gap:0; margin-top:14px; border:1px solid rgba(255,255,255,.07); border-radius:8px; overflow:hidden; }
+  .inspector-mini-stats > div { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 8px; border-bottom:1px solid rgba(255,255,255,.06); }
+  .inspector-mini-stats > div:last-child { border:0; }
+  .inspector-mini-stats span { color:#6e6e78; font-size:8px; }
+  .inspector-mini-stats strong { color:#c9c9cf; font:600 8px ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .inspector-evidence { display:grid; align-content:start; min-width:0; }
+  .inspector-block { padding:14px 15px; border-bottom:1px solid rgba(255,255,255,.07); }
+  .inspector-block:last-child { border-bottom:0; }
+  .inspector-cause { display:block; overflow:hidden; margin-top:7px; padding:7px 8px; border:1px solid rgba(246,55,91,.18); border-radius:6px; background:rgba(246,55,91,.07); color:#ff8ba1; font:600 9px ui-monospace,SFMono-Regular,Menlo,monospace; text-overflow:ellipsis; white-space:nowrap; }
+  .inspector-diff-block { display:grid; gap:7px; }
+  .inspector-diff { display:grid; gap:5px; padding-top:2px; }
+  .inspector-diff > code { color:#e7e7ea; font:650 9px ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .inspector-diff > div { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:6px; }
+  .inspector-diff del,.inspector-diff ins { overflow:hidden; padding:5px 6px; border-radius:5px; font:500 8px ui-monospace,SFMono-Regular,Menlo,monospace; text-decoration:none; text-overflow:ellipsis; white-space:nowrap; }
+  .inspector-diff del { color:#a1a1aa; background:rgba(255,255,255,.04); }
+  .inspector-diff ins { color:#b8f7dc; background:rgba(52,211,153,.07); }
+  .inspector-diff > div span { color:#5f5f68; }
+  .inspector-diff em { color:#fbbf24; font-size:8px; font-style:normal; }
+  .inspector-none { margin:7px 0 0; color:#777782; font-size:9px; }
+  .inspector-footer { display:flex; align-items:center; justify-content:space-between; gap:18px; min-height:66px; padding:10px 12px 10px 15px; border-top:1px solid rgba(255,255,255,.08); background:#0e0e12; }
+  .inspector-footer > div { min-width:0; }
+  .inspector-footer > div > span { color:#ff7892; font-size:8px; font-weight:750; letter-spacing:.08em; text-transform:uppercase; }
+  .inspector-footer p { display:-webkit-box; overflow:hidden; margin:2px 0 0; color:#a0a0a8; font-size:9px; line-height:1.35; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
+  .inspector-footer .component-copy-btn { display:inline-flex; align-items:center; gap:6px; flex:0 0 auto; padding:7px 10px; border-color:rgba(255,255,255,.11); border-radius:7px; background:rgba(255,255,255,.045); color:#e7e7ea; font-size:9px; }
+  .inspector-footer .component-copy-btn:hover { border-color:rgba(246,55,91,.35); background:rgba(246,55,91,.1); color:#fff; }
+  @media (max-width:560px) {
+    .inspect-panel.inspector-console { overflow:auto; }
+    .inspector-body { grid-template-columns:1fr; }
+    .inspector-timing { border-right:0; border-bottom:1px solid rgba(255,255,255,.08); }
+    .inspector-mini-stats { grid-template-columns:repeat(3,1fr); }
+    .inspector-mini-stats > div { display:grid; gap:2px; border-right:1px solid rgba(255,255,255,.06); border-bottom:0; }
+  }
+
+  /* Draggable scanner control: one quiet command bar, not a row of cards. */
+  .toolbar, :host(.dark) .toolbar {
+    flex-wrap:nowrap; gap:0; min-height:46px; padding:5px 6px 5px 5px;
+    border:1px solid rgba(255,255,255,.12); border-radius:13px;
+    background:rgba(16,16,20,.97); box-shadow:0 18px 50px rgba(0,0,0,.5),0 0 0 1px rgba(0,0,0,.3);
+    backdrop-filter:blur(20px); cursor:grab;
+  }
+  :host(:not(.dark)) .toolbar {
+    border-color:rgba(20,20,25,.13); background:rgba(255,255,255,.98);
+    box-shadow:0 18px 50px rgba(20,20,25,.18),0 0 0 1px rgba(255,255,255,.8);
+  }
+  .toolbar:hover { border-color:rgba(255,255,255,.18); box-shadow:0 20px 56px rgba(0,0,0,.54); }
+  .toolbar-grip { display:grid; grid-template-columns:repeat(2,2px); grid-auto-rows:2px; gap:3px; padding:8px 7px 8px 5px; opacity:.38; }
+  .toolbar-grip i { width:2px; height:2px; border-radius:50%; background:currentColor; }
+  .scanner-brand { display:flex; align-items:center; gap:8px; padding-right:11px; }
+  .scanner-mark { display:grid; place-items:center; width:27px; height:27px; flex:0 0 27px; clip-path:polygon(50% 0,96% 18%,88% 78%,50% 100%,12% 78%,4% 18%); background:linear-gradient(145deg,#ff5d79,#d80031); color:#fff; font-size:10px; font-weight:800; }
+  .scanner-name { display:grid; color:var(--ars-color); font-size:10px; font-weight:720; line-height:1.15; white-space:nowrap; }
+  .scanner-name small { margin-top:2px; color:var(--ars-label); font:500 7px ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .scanner-power { display:grid; place-items:center; min-width:27px; width:27px; height:27px; margin-right:5px; border:1px solid var(--ars-border); border-radius:8px; background:rgba(255,255,255,.035); }
+  .power-control { position:relative; display:block; width:12px; height:12px; border:1.5px solid #71717b; border-radius:50%; }
+  .power-control::before { content:""; position:absolute; left:50%; top:-3px; width:1.5px; height:6px; transform:translateX(-50%); border-radius:2px; background:#71717b; box-shadow:0 0 0 2px #111116; }
+  .scanner-power input:checked + .power-control { border-color:#34d399; box-shadow:0 0 0 3px rgba(52,211,153,.08); }
+  .scanner-power input:checked + .power-control::before { background:#34d399; }
+  .toolbar-main, .toolbar.compact .toolbar-main {
+    display:flex; align-items:stretch; flex-wrap:nowrap; gap:0; min-width:0; max-width:none;
+    padding:0 4px; border-left:1px solid var(--ars-border); border-right:1px solid var(--ars-border);
+  }
+  .toolbar .metric, .toolbar.compact .metric, .toolbar.expanded .metric, :host(.dark) .toolbar .metric {
+    display:grid; align-content:center; gap:1px; min-width:64px; padding:2px 10px;
+    border:0; border-right:1px solid var(--ars-border); border-radius:0; background:transparent; box-shadow:none;
+  }
+  .toolbar .metric:last-child { border-right:0; }
+  .toolbar .metric:hover, :host(.dark) .toolbar .metric:hover { border-color:var(--ars-border); background:rgba(255,255,255,.025); box-shadow:none; }
+  .toolbar .metric .label { color:var(--ars-label); font-size:6.5px; letter-spacing:.09em; }
+  .toolbar .metric .value { color:var(--ars-color); font-size:10px; font-weight:680; }
+  .toolbar-actions { gap:2px; padding-left:5px; border-left:0; }
+  .toolbar .action-btn, .toolbar .clear-btn, .toolbar .details-toggle {
+    display:grid; place-items:center; width:29px; min-width:29px; height:29px; padding:0;
+    border:1px solid transparent; border-radius:8px; background:transparent; color:#85858f;
+  }
+  .toolbar .action-btn:hover, .toolbar .clear-btn:hover, .toolbar .details-toggle:hover { border-color:var(--ars-border); background:rgba(255,255,255,.055); color:var(--ars-color); }
+  .toolbar .toolbar-picker-toggle { display:flex; width:auto; min-width:auto; gap:6px; padding:0 9px; }
+  .toolbar-picker-toggle > span { font-size:9px; font-weight:650; }
+  .toolbar .toolbar-picker-toggle.active { border-color:rgba(246,55,91,.35); background:rgba(246,55,91,.13); color:#ff7892; box-shadow:none; }
+  .toolbar .action-btn svg, .toolbar .clear-btn svg, .toolbar .details-toggle svg { width:13px; height:13px; }
+  .toolbar.disabled { gap:0; min-height:42px; padding:4px 5px; border-radius:12px; opacity:1; }
+  .toolbar.disabled .scanner-brand { padding-right:8px; }
+  .toolbar.disabled .scanner-name { color:var(--ars-label); }
+  .toolbar.disabled .scanner-power { margin-right:0; }
+  @media (max-width:640px) {
+    .toolbar, :host(.dark) .toolbar { right:8px !important; max-width:calc(100vw - 16px); }
+    .scanner-name { display:none; }
+    .scanner-brand { padding-right:6px; }
+    .toolbar .metric { min-width:52px; padding-inline:7px; }
+    .toolbar .metric:last-child { display:none; }
+    .toolbar-picker-toggle > span { display:none; }
+    .toolbar .toolbar-picker-toggle { width:29px; padding:0; }
+  }
+
+  /* Final low-profile mode: intentionally easy to ignore until needed. */
+  .toolbar, :host(.dark) .toolbar {
+    min-height:30px; padding:2px 3px; gap:0; border-radius:8px;
+    border-color:rgba(255,255,255,.09); background:rgba(15,15,18,.9);
+    box-shadow:0 8px 24px rgba(0,0,0,.28); backdrop-filter:blur(14px);
+  }
+  .toolbar:hover { border-color:rgba(255,255,255,.14); box-shadow:0 10px 28px rgba(0,0,0,.34); }
+  .scanner-power {
+    display:flex; place-items:unset; align-items:center; gap:4px; width:auto; min-width:auto; height:24px;
+    margin:0; padding:0 6px 0 5px; border:0; border-radius:5px; background:transparent;
+  }
+  .power-control, .scanner-power input:checked + .power-control {
+    width:6px; height:6px; border:0; border-radius:50%; background:#71717b; box-shadow:none;
+  }
+  .scanner-power input:checked + .power-control { background:#34d399; }
+  .power-control::before { display:none; }
+  .power-label { color:#85858e; font-size:8px; font-weight:600; }
+  .minimal-version { padding:0 7px 0 2px; color:#686871; font:500 7px ui-monospace,SFMono-Regular,Menlo,monospace; white-space:nowrap; }
+  .toolbar-main, .toolbar.compact .toolbar-main {
+    height:20px; padding:0 2px; border-color:rgba(255,255,255,.07);
+  }
+  .toolbar .metric, .toolbar.compact .metric, .toolbar.expanded .metric, :host(.dark) .toolbar .metric {
+    display:flex; align-items:center; min-width:auto; padding:0 7px; border-color:rgba(255,255,255,.07);
+  }
+  .toolbar .metric .label { display:none; }
+  .toolbar .metric .value { color:#a6a6ae; font-size:8px; font-weight:600; }
+  .toolbar-actions { gap:0; padding-left:2px; }
+  .toolbar .action-btn, .toolbar .clear-btn, .toolbar .details-toggle,
+  .toolbar .toolbar-picker-toggle {
+    display:flex; width:auto; min-width:auto; height:24px; padding:0 7px;
+    border:0; border-radius:5px; background:transparent; color:#777780;
+    font:600 8px ui-sans-serif,system-ui,sans-serif;
+  }
+  .toolbar .action-btn:hover, .toolbar .clear-btn:hover, .toolbar .details-toggle:hover {
+    border:0; background:rgba(255,255,255,.05); color:#c8c8ce;
+  }
+  .toolbar .toolbar-picker-toggle { gap:0; }
+  .toolbar .toolbar-picker-toggle.active {
+    border:0; background:rgba(246,55,91,.1); color:#ff7892; box-shadow:none;
+  }
+  .toolbar.disabled { min-height:28px; padding:2px 3px; border-radius:8px; }
+  .toolbar.disabled .minimal-version { padding-right:3px; }
+  @media (max-width:480px) {
+    .minimal-version { display:none; }
+    .toolbar .metric { padding-inline:5px; }
+    .toolbar .clear-btn { display:none; }
+    .toolbar-picker-toggle > span { display:inline; }
+  }
+
+  /* Compact inspector sizing. */
+  .inspector-header { min-height:48px; padding:8px 10px; }
+  .inspector-identity { gap:0; }
+  .inspector-identity strong { font-size:11px; }
+  .inspector-status { padding:3px 6px; font-size:7px; }
+  .inspector-body { grid-template-columns:124px minmax(0,1fr); min-height:126px; }
+  .inspector-timing { padding:10px; }
+  .inspector-duration { margin-top:3px; }
+  .inspector-duration strong { font-size:20px; }
+  .inspector-duration-track { margin-top:8px; }
+  .inspector-mini-stats { margin-top:8px; }
+  .inspector-mini-stats > div { padding:4px 6px; }
+  .inspector-block { padding:9px 10px; }
+  .inspector-cause { margin-top:5px; padding:5px 6px; }
+  .inspector-diff-block { gap:4px; }
+  .inspector-none { margin-top:5px; }
+  .inspector-footer { min-height:48px; gap:10px; padding:7px 8px 7px 10px; }
+  .inspector-footer p { -webkit-line-clamp:1; }
+  .inspector-footer .component-copy-btn { padding:5px 7px; }
+
 
 `;
 
@@ -1009,10 +1306,7 @@ export class AngularRenderScanOverlay {
       this.hoveredRect = hovered?.rect;
       this.hoverPointer = hovered ? { x: e.clientX, y: e.clientY } : undefined;
       this.setDetailsHoverCursor(Boolean(hovered));
-      if (
-        previousHoveredId !== this.hoveredEntry?.id ||
-        this.hoveredEntry
-      ) {
+      if (previousHoveredId !== this.hoveredEntry?.id) {
         this.renderToolbar();
       }
     };
@@ -1208,12 +1502,7 @@ export class AngularRenderScanOverlay {
   }
 
   private restoreToolbarCompact(): void {
-    try {
-      const raw = globalThis.localStorage?.getItem(TOOLBAR_COMPACT_KEY);
-      this.compactToolbar = raw === null ? true : raw !== "false";
-    } catch {
-      this.compactToolbar = true;
-    }
+    this.compactToolbar = true;
   }
 
   private saveToolbarCompact(): void {
@@ -1384,14 +1673,6 @@ export class AngularRenderScanOverlay {
         return [{ entry, rect, expiresAt: 0 }];
       })
       .sort((a, b) => area(a.rect) - area(b.rect));
-
-    if (
-      matches.length === 1 &&
-      matches[0].entry.parentId === null &&
-      hitElement !== matches[0].entry.element
-    ) {
-      return undefined;
-    }
 
     return matches[0] ?? this.findClickedEntry(x, y);
   }
@@ -1606,7 +1887,6 @@ export class AngularRenderScanOverlay {
     const compactToolbar = this.compactToolbar || !this.options.enabled;
     const cpuVal = this.cpu.value;
     const cpuClass = cpuVal > 50 ? "cpu-high" : cpuVal > 20 ? "cpu-medium" : "";
-    const angularVersion = this.angularVersionFromDom();
 
     const wasted = getWastedStats();
     const leaks = getLeakedComponents();
@@ -1698,30 +1978,17 @@ export class AngularRenderScanOverlay {
     const htmlChanged = this.replaceToolbarHtml(
       container,
       `
-      ${this.options.enabled ? this.inspectPanelHtml() : ""}
-      ${this.options.enabled ? this.cpuDetailsHtml() : ""}
-      ${this.options.enabled ? this.waterfallPanelHtml() : ""}
-      ${this.options.enabled ? this.alertsPanelHtml() : ""}
-      ${this.options.enabled ? this.onPushPanelHtml(onPushCandidates) : ""}
-      ${this.options.enabled ? this.zonePollutionPanelHtml(pollutionEvents) : ""}
-      ${this.options.enabled ? this.cdGraphPanelHtml() : ""}
+      ${this.options.enabled ? this.streamlinedInspectPanelHtml() : ""}
       <div class="toolbar ${this.options.enabled ? (compactToolbar ? "compact" : "expanded") : "disabled"}" style="right: ${this.toolbarX}px; bottom: ${this.toolbarY}px;">
-        <div class="toolbar-switch">
-          ${angularVersion ? `<span class="angular-version-chip" title="Angular ${escapeHtml(angularVersion)}">ng ${escapeHtml(angularVersion)}</span>` : ""}
-          <label class="switch" data-tooltip="Enable or pause render scanning.">
-            <input type="checkbox" ${this.options.enabled ? "checked" : ""} aria-label="Angular Render Scan enabled" />
-            <span class="track" aria-hidden="true"></span>
-            <span class="switch-text">${this.options.enabled ? "On" : "Off"}</span>
-          </label>
-        </div>
+        <label class="switch scanner-power" data-tooltip="${this.options.enabled ? "Pause render scanning" : "Resume render scanning"}">
+          <input type="checkbox" ${this.options.enabled ? "checked" : ""} aria-label="Angular Render Scan enabled" />
+          <span class="power-control" aria-hidden="true"></span>
+          <span class="power-label">${this.options.enabled ? "On" : "Off"}</span>
+        </label>
         ${this.options.enabled ? `
         <div class="toolbar-main">
           ${this.metric("FPS", this.options.showFPS ? String(displayedFps) + " fps" : "-", this.getFpsClass(displayedFps))}
-          <span class="metric cpu-interactive ${this.showCpuDetails ? "active" : ""}" data-tooltip="Main-thread busy %. High values mean JS is blocking the render pipeline. Click for details.">
-            <span class="label">CPU</span>
-            <span class="value ${cpuClass}">${cpuVal}%</span>
-          </span>
-          ${sparklineSvg}
+          ${this.metric("Cycle", cycle ? `${cycle.duration.toFixed(1)}ms` : "-")}
         </div>
         ${compactToolbar ? "" : `
         <div class="toolbar-extended">
@@ -1739,16 +2006,9 @@ export class AngularRenderScanOverlay {
         </div>
         `}
         <span class="toolbar-actions">
-          ${compactToolbar ? "" : `
-          ${this.options.showCopyPrompt ? '<button class="action-btn copy-prompt-btn" aria-label="Copy prompt for slow render issues" data-tooltip="Copy an AI-ready prompt with only the captured slow/error component issues and their runtime evidence."><span aria-hidden="true">✦</span></button>' : ""}
-          <button class="action-btn export-btn" aria-label="Export session data" data-tooltip="Download the current profiling session data as a .json file."><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"></path><path d="m7 9 5 5 5-5"></path><path d="M5 19h14"></path></svg></button>
-          <button class="clear-btn" aria-label="Clear stats" data-tooltip="Clear current render stats."><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 19 5-5"></path><path d="m9 15 5 5"></path><path d="M15 4 4 15"></path><path d="m14 5 5 5"></path><path d="m18 11-7-7"></path></svg></button>
-          `}
+          <button class="clear-btn" aria-label="Clear stats" data-tooltip="Clear current render stats.">Reset</button>
           <button class="action-btn details-toggle toolbar-picker-toggle ${this.detailsMode ? "active" : ""}" aria-pressed="${this.detailsMode}" aria-label="Enable component details panel" data-tooltip="Use the picker to inspect a component on hover. Clicks continue to the app.">
-            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4l7 16 2.8-6.2L20 11 4 4z"></path><path d="M13.8 13.8 20 20"></path></svg>
-          </button>
-          <button class="action-btn toolbar-size-toggle" aria-pressed="${compactToolbar ? "false" : "true"}" aria-label="${compactToolbar ? "Show extended view" : "Show compact view"}" data-tooltip="${compactToolbar ? "Show extended view" : "Show small view"}">
-            ${compactToolbar ? '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"></path></svg>' : '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"></path></svg>'}
+            <span>Inspect</span>
           </button>
         </span>
         ` : ""}
@@ -1912,6 +2172,17 @@ export class AngularRenderScanOverlay {
       { once: true },
     );
 
+    container.querySelector(".component-copy-btn")?.addEventListener(
+      "click",
+      async () => {
+        const entry = this.currentDetailsEntry();
+        if (!entry) return;
+        const copied = await this.copyComponentPrompt(entry, this.latestFps || this.fps.value);
+        this.setCopyStatus(copied ? "Copied evidence" : "Copy failed");
+      },
+      { once: true },
+    );
+
     container.querySelector(".open-editor-btn")?.addEventListener(
       "click",
       async () => {
@@ -2065,6 +2336,68 @@ export class AngularRenderScanOverlay {
     this.lastToolbarHtml = html;
     toolbar.innerHTML = html;
     return true;
+  }
+
+  private streamlinedInspectPanelHtml(): string {
+    const entry = this.currentDetailsEntry();
+    if (!entry) return "";
+
+    const cause = entry.renderCause
+      ? `${entry.renderCause.trigger}${entry.renderCause.source ? ` → ${entry.renderCause.source}` : ""}`
+      : entry.reason ?? "unknown";
+    const changedInputs = entry.changedInputs?.slice(0, 3) ?? [];
+    const recommendation = this.recommendationsFor(entry)[0];
+    const didChangeDom = entry.mutationType !== "none";
+    const status = didChangeDom ? "Changed" : "No visual change";
+    const statusClass = didChangeDom ? "changed" : "no-change";
+    const durationRatio = Math.min(100, (entry.latestDuration / Math.max(this.slowThresholdMs, 0.1)) * 100);
+    const durationClass = entry.latestDuration >= this.slowThresholdMs
+      ? "slow"
+      : entry.latestDuration >= this.fastThresholdMs ? "medium" : "fast";
+
+    return `
+      <section class="inspect-panel inspector-console ${durationClass}"
+        style="${this.inspectPanelPositionStyle(entry)}" aria-label="${escapeHtml(entry.name)} render details">
+        <header class="inspector-header">
+          <div class="inspector-identity">
+            <div>
+              <strong>${escapeHtml(entry.name)}</strong>
+              <span>${escapeHtml(entry.selector ?? entry.element.tagName.toLowerCase())}</span>
+            </div>
+          </div>
+          <span class="inspector-status ${statusClass}"><i></i>${status}</span>
+        </header>
+        <div class="inspector-body">
+          <section class="inspector-timing">
+            <span class="inspector-label">Last component check</span>
+            <div class="inspector-duration"><strong>${entry.latestDuration.toFixed(2)}</strong><span>ms</span></div>
+            <div class="inspector-duration-track"><i style="width:${durationRatio.toFixed(0)}%"></i></div>
+            <div class="inspector-threshold"><span>0</span><span>slow at ${this.slowThresholdMs.toFixed(0)} ms</span></div>
+            <div class="inspector-mini-stats">
+              <div><span>Checks</span><strong>${entry.count}</strong></div>
+              <div><span>Strategy</span><strong>${escapeHtml(entry.cdStrategy ?? "unknown")}</strong></div>
+            </div>
+          </section>
+          <section class="inspector-evidence">
+            <div class="inspector-block">
+              <span class="inspector-label">Why Angular checked it</span>
+              <code class="inspector-cause">${escapeHtml(cause)}</code>
+            </div>
+            <div class="inspector-block inspector-diff-block">
+              <span class="inspector-label">Input evidence</span>
+              ${changedInputs.length ? changedInputs.map(input => `<div class="inspector-diff">
+                <code>${escapeHtml(input.name)}</code>
+                <div><del>${escapeHtml(input.previous)}</del><span>→</span><ins>${escapeHtml(input.current)}</ins></div>
+                ${input.isReferentiallyUnstable ? '<em>Equal value, different reference</em>' : ''}
+              </div>`).join("") : '<p class="inspector-none">No input change captured in this check.</p>'}
+            </div>
+          </section>
+        </div>
+        <footer class="inspector-footer">
+          <div><span>${recommendation ? escapeHtml(recommendation.category) : "Assessment"}</span><p>${recommendation ? escapeHtml(recommendation.action) : "This sample is within the configured performance budget."}</p></div>
+          <button class="component-copy-btn" type="button" aria-label="Copy component evidence"><span>⧉</span> Copy</button>
+        </footer>
+      </section>`;
   }
 
   private inspectPanelHtml(): string {
@@ -2228,66 +2561,12 @@ export class AngularRenderScanOverlay {
     return this.hoveredEntry ?? this.selectedEntry;
   }
 
-  private inspectPanelPositionStyle(entry: AngularRenderEntry): string {
+  private inspectPanelPositionStyle(_entry: AngularRenderEntry): string {
     const margin = 12;
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    const panelWidth = Math.min(280, Math.max(220, viewportWidth - margin * 2));
-    const panelHeightEstimate = Math.min(
-      300,
-      Math.max(180, viewportHeight - margin * 2),
-    );
-    const rect =
-      this.hoveredEntry?.id === entry.id
-        ? this.hoveredRect
-        : entry.element?.getBoundingClientRect();
-    const pointer =
-      this.hoveredEntry?.id === entry.id ? this.hoverPointer : undefined;
-
-    let left = viewportWidth - this.toolbarX - panelWidth;
-    let top = viewportHeight - this.toolbarY - panelHeightEstimate - 60;
-
-    if (rect) {
-      const anchorX = pointer?.x ?? rect.left + rect.width / 2;
-      const anchorY = pointer?.y ?? rect.top + rect.height / 2;
-      const isLargeTarget =
-        rect.width > panelWidth + 48 || rect.height > panelHeightEstimate;
-
-      if (isLargeTarget && pointer) {
-        left =
-          anchorX + margin + panelWidth <= viewportWidth
-            ? anchorX + margin
-            : anchorX - panelWidth - margin;
-        top =
-          anchorY + margin + panelHeightEstimate <= viewportHeight
-            ? anchorY + margin
-            : anchorY - panelHeightEstimate - margin;
-      } else {
-        if (rect.right + margin + panelWidth <= viewportWidth) {
-          left = rect.right + margin;
-        } else if (rect.left - margin - panelWidth >= 0) {
-          left = rect.left - panelWidth - margin;
-        } else {
-          left =
-            anchorX + margin + panelWidth <= viewportWidth
-              ? anchorX + margin
-              : anchorX - panelWidth - margin;
-        }
-
-        top = rect.top;
-        if (rect.height > panelHeightEstimate / 2) {
-          top = anchorY - panelHeightEstimate / 2;
-        }
-      }
-    }
-
-    left = Math.max(margin, Math.min(left, viewportWidth - panelWidth - margin));
-    top = Math.max(
-      margin,
-      Math.min(top, viewportHeight - panelHeightEstimate - margin),
-    );
-
-    return `left: ${Math.round(left)}px; top: ${Math.round(top)}px; right: auto; bottom: auto; width: ${Math.round(panelWidth)}px; max-width: calc(100vw - ${margin * 2}px);`;
+    const width = Math.min(360, window.innerWidth - margin * 2);
+    const right = Math.max(margin, this.toolbarX);
+    const bottom = Math.max(margin, this.toolbarY + 58);
+    return `right:${Math.round(right)}px; bottom:${Math.round(bottom)}px; left:auto; top:auto; width:${Math.round(width)}px; max-width:calc(100vw - ${margin * 2}px); max-height:calc(100vh - ${Math.round(bottom + margin)}px);`;
   }
 
   private panelField(label: string, value: string): string {

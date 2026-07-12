@@ -304,6 +304,7 @@ export interface AngularRenderScanOptions {
   showCopyPrompt?: boolean;
   promptContext?: string;
   theme?: Partial<AngularRenderScanTheme>;
+  budgets?: AngularRenderScanBudgets;
   editorProtocol?: 'vscode' | 'webstorm' | 'cursor' | string;
   darkMode?: AngularRenderScanDarkMode;
   onCycleStart?: () => void;

@@ -6,13 +6,14 @@ Angular Render Scan is a visual debugging overlay for Angular change detection. 
 
 [Live Demo](https://edisonaugusthy.github.io/angular-render-scan/) | [npm](https://www.npmjs.com/package/angular-render-scan)
 
-## Versions
+## Compatibility
 
 | Package                   | Version   |
 | ------------------------- | --------- |
-| Angular                   | `^22.0.0` |
-| `angular-render-scan`     | `0.1.8`   |
-| `angular-render-scan-cli` | `0.1.5`   |
+| Angular provider mode     | `17+`     |
+| Script-tag overlay        | `9+`      |
+| `angular-render-scan`     | `0.1.13`  |
+| `angular-render-scan-cli` | `0.1.13`  |
 
 ## What it shows
 
@@ -29,7 +30,7 @@ Angular Render Scan is a visual debugging overlay for Angular change detection. 
 npm install angular-render-scan
 ```
 
-Angular Render Scan expects Angular 9+.
+Provider mode supports Angular 17+ (including signals and zoneless applications). For Angular 9–16, use the framework-independent script-tag build; automatic component instrumentation requires provider mode.
 
 ## Setup with the CLI
 
