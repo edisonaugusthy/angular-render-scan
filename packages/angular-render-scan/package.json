@@ -1,6 +1,6 @@
 {
   "name": "angular-render-scan",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Visual Angular change-detection scanner for debugging component renders.",
   "keywords": [
     "angular",
