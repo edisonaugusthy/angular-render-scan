@@ -6,6 +6,7 @@ import {
   startCycle,
   getWastedStats as statsGetWastedStats,
   getLeakedComponents as statsGetLeakedComponents,
+  getDetachedComponents as statsGetDetachedComponents,
   getOnPushCandidates as statsGetOnPushCandidates,
   getReferentialInstability as statsGetReferentialInstability,
   getCdGraph as statsGetCdGraph,
@@ -29,9 +30,17 @@ import type {
   RenderCause,
   SignalDependencyGraph,
   ComponentCostEntry,
+  InteractionComparison,
+  InteractionReport,
   SignalDependencyNode,
   SignalDependencyEdge
 } from '../domain/entities';
+import {
+  compareInteractionReports,
+  createInteractionReport,
+  formatInteractionReportHtml,
+  formatInteractionReportMarkdown
+} from './interaction';
 
 // Register callback for stats to query render cause to avoid circular imports
 registerGetRenderCauseCallback((name) => {
@@ -46,6 +55,9 @@ let implicitCycleScheduled = false;
 let recentCycles: AngularRenderCycle[] = [];
 let activeSessionBudgetViolations: BudgetViolation[] = [];
 let activeZonePollutionEvents: ZonePollutionEvent[] = [];
+let activeInteraction: { name: string; startedAt: string; startedAtMs: number; afterCycleId: number } | undefined;
+let latestInteractionReport: InteractionReport | undefined;
+let interactionBaseline: InteractionReport | undefined;
 
 // v0.2 state tracking
 let activeCycleTrigger: CdTriggerAttribution | undefined;
@@ -112,6 +124,9 @@ export function stop(): void {
   implicitCycleScheduled = false;
   activeSessionBudgetViolations = [];
   activeZonePollutionEvents = [];
+  activeInteraction = undefined;
+  latestInteractionReport = undefined;
+  interactionBaseline = undefined;
 }
 
 export function beginCycle(): number {
@@ -137,7 +152,8 @@ export function beginCycle(): number {
 }
 
 function getRendersInLastSecond(id: string, now: number): number {
-  let count = 0;
+  // The cycle being finalized is not in recentCycles yet, so include it here.
+  let count = 1;
   for (let i = recentCycles.length - 1; i >= 0; i--) {
     const cycle = recentCycles[i];
     if (now - cycle.finishedAt > 1000) {
@@ -621,15 +637,15 @@ function buildAIPrompt(cycles: AngularRenderCycle[], options = getResolvedOption
     '',
     onPushCandidates.length > 0 ? '## ⚡️ OnPush Migration Candidates:' : '',
     onPushCandidates.length > 0
-      ? 'These components use Default CD and have high wasted render rates. Switching to OnPush should significantly reduce unnecessary checks.'
+      ? 'These components have a high observed no-mutation check share. Treat OnPush as an experiment and verify it with the same interaction.'
       : '',
     ...onPushCandidates.slice(0, 5).map((c, i) =>
-      `${i + 1}. **${c.name}** (${c.selector}) — ${c.wastedPercentage}% wasted, ~${c.estimatedSavingPct}% estimated saving [${c.confidence} confidence] — ${c.reason}`
+      `${i + 1}. **${c.name}** (${c.selector}) — ${c.opportunityPercentage}% observed no-mutation share [${c.confidence} confidence] — ${c.reason}`
     ),
     '',
     pollutionEvents.length > 0 ? '## ⚠️ Zone Pollution Events (last 5):' : '',
     pollutionEvents.length > 0
-      ? 'These CD cycles were triggered by async operations with no user interaction.'
+      ? 'For Zone.js applications only: these cycles followed async operations without a nearby user interaction.'
       : '',
     ...pollutionEvents.map(e =>
       `- ${e.source}${e.detail ? ` (${e.detail})` : ''} — ${e.componentCount} components ran, ${formatMs(e.cycleDuration)}`
@@ -742,7 +758,7 @@ function formatMs(value: number): string {
 export function getSessionData(): SessionExportData {
   const options = getResolvedOptions();
   const wasted = statsGetWastedStats();
-  const leaks = statsGetLeakedComponents().map((c) => c.name);
+  const detached = statsGetDetachedComponents().map((c) => c.name);
   const onPushCandidates = statsGetOnPushCandidates(options.onPushCandidateThreshold);
   const refInstability = statsGetReferentialInstability();
 
@@ -789,15 +805,69 @@ export function getSessionData(): SessionExportData {
     cycles: mappedCycles,
     wastedStats: wasted,
     budgetViolations: activeSessionBudgetViolations,
-    leakedComponents: leaks,
+    detachedComponents: detached,
+    leakedComponents: detached,
     onPushCandidates,
     zonePollutionEvents: [...activeZonePollutionEvents],
     referentialInstabilityReports: refInstability
   };
 }
 
+/** Start a named, user-visible interaction capture. Only subsequent cycles are included. */
+export function beginInteraction(name: string): void {
+  activeInteraction = {
+    name: name.trim() || 'Captured interaction',
+    startedAt: new Date().toISOString(),
+    startedAtMs: Date.now(),
+    afterCycleId: recentCycles.at(-1)?.id ?? activeCycleId
+  };
+}
+
+/** Finish the active interaction and return ranked, portable evidence. */
+export function endInteraction(): InteractionReport {
+  if (!activeInteraction) {
+    throw new Error('[angular-render-scan] No interaction capture is active. Call beginInteraction(name) first.');
+  }
+  const capture = activeInteraction;
+  activeInteraction = undefined;
+  const session = getSessionData();
+  const cycles = session.cycles.filter((cycle) => cycle.id > capture.afterCycleId);
+  const componentNames = new Set(cycles.flatMap((cycle) => cycle.entries.map((entry) => entry.name)));
+  const scoped: SessionExportData = {
+    ...session,
+    cycles,
+    budgetViolations: session.budgetViolations.filter((violation) => violation.timestamp >= capture.startedAtMs),
+    onPushCandidates: session.onPushCandidates.filter((candidate) => componentNames.has(candidate.name)),
+    referentialInstabilityReports: session.referentialInstabilityReports.filter((report) => componentNames.has(report.componentName)),
+    zonePollutionEvents: session.zonePollutionEvents.filter((event) => event.timestamp >= capture.startedAtMs)
+  };
+  latestInteractionReport = createInteractionReport(capture.name, scoped, capture.startedAt);
+  return latestInteractionReport;
+}
+
+export function getInteractionReport(): InteractionReport | undefined {
+  return latestInteractionReport;
+}
+
+export function setInteractionBaseline(report: InteractionReport): void {
+  interactionBaseline = report;
+}
+
+export function compareWithInteractionBaseline(report = latestInteractionReport): InteractionComparison {
+  if (!interactionBaseline) throw new Error('[angular-render-scan] No baseline report is set.');
+  if (!report) throw new Error('[angular-render-scan] No candidate interaction report is available.');
+  return compareInteractionReports(interactionBaseline, report);
+}
+
+export { compareInteractionReports, createInteractionReport, formatInteractionReportHtml, formatInteractionReportMarkdown };
+
 export function setResolvedTriggerForTest(trigger: CdTriggerAttribution | undefined): void {
   activeCycleTrigger = trigger;
 }
 
-export { statsGetWastedStats as getWastedStats, statsGetLeakedComponents as getLeakedComponents, getComponentCostEntries as getComponentCostAnalysis };
+export {
+  statsGetWastedStats as getWastedStats,
+  statsGetLeakedComponents as getLeakedComponents,
+  statsGetDetachedComponents as getDetachedComponents,
+  getComponentCostEntries as getComponentCostAnalysis
+};

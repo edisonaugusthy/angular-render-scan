@@ -35,6 +35,113 @@ function step(n: number, total: number, msg: string) {
   log(`${c.gray}[${n}/${total}]${c.reset} ${msg}`);
 }
 
+type ReportMetrics = {
+  cycleCount: number;
+  totalCycleDuration: number;
+  maxCycleDuration: number;
+  wastedPercentage: number;
+  budgetViolationCount: number;
+};
+
+type PortableReport = {
+  schemaVersion: 1;
+  name: string;
+  metrics: ReportMetrics;
+  findings: Array<{ title: string; summary: string; evidence: string[]; action: string }>;
+};
+
+type ReportComparison = {
+  outcome: 'improved' | 'regressed' | 'unchanged';
+  regressions: string[];
+  deltas: Record<'totalCycleDuration' | 'maxCycleDuration' | 'wastedPercentage' | 'budgetViolationCount', number>;
+};
+
+function optionValue(args: string[], flag: string): string | undefined {
+  const index = args.indexOf(flag);
+  return index >= 0 ? args[index + 1] : undefined;
+}
+
+function readPortableReport(filePath: string): PortableReport {
+  const value: unknown = JSON.parse(readFile(path.resolve(filePath)));
+  if (!value || typeof value !== 'object' || !('metrics' in value) || !('findings' in value) || !('name' in value)) {
+    throw new Error(`Invalid interaction report: ${filePath}`);
+  }
+  return value as PortableReport;
+}
+
+function comparePortableReports(baseline: PortableReport, candidate: PortableReport): ReportComparison {
+  const percent = (before: number, after: number) => before === 0 ? 0 : ((after - before) / before) * 100;
+  const deltas = {
+    totalCycleDuration: candidate.metrics.totalCycleDuration - baseline.metrics.totalCycleDuration,
+    maxCycleDuration: candidate.metrics.maxCycleDuration - baseline.metrics.maxCycleDuration,
+    wastedPercentage: candidate.metrics.wastedPercentage - baseline.metrics.wastedPercentage,
+    budgetViolationCount: candidate.metrics.budgetViolationCount - baseline.metrics.budgetViolationCount
+  };
+  const regressions: string[] = [];
+  const totalPct = percent(baseline.metrics.totalCycleDuration, candidate.metrics.totalCycleDuration);
+  const maxPct = percent(baseline.metrics.maxCycleDuration, candidate.metrics.maxCycleDuration);
+  if (totalPct > 10) regressions.push(`Total cycle time increased ${totalPct.toFixed(1)}%.`);
+  if (maxPct > 10) regressions.push(`Maximum cycle time increased ${maxPct.toFixed(1)}%.`);
+  if (deltas.wastedPercentage > 5) regressions.push(`No-mutation check share increased ${deltas.wastedPercentage.toFixed(1)} points.`);
+  if (deltas.budgetViolationCount > 0) regressions.push(`${deltas.budgetViolationCount} additional budget violation(s).`);
+  const improved = totalPct < -10 || maxPct < -10;
+  return { outcome: regressions.length ? 'regressed' : improved ? 'improved' : 'unchanged', regressions, deltas };
+}
+
+function portableMarkdown(report: PortableReport, comparison?: ReportComparison): string {
+  const lines = [`# Angular Render Scan: ${report.name}`, ''];
+  if (comparison) {
+    lines.push(`## Comparison: ${comparison.outcome.toUpperCase()}`, '',
+      `- Total cycle time delta: ${comparison.deltas.totalCycleDuration.toFixed(2)}ms`,
+      `- Maximum cycle delta: ${comparison.deltas.maxCycleDuration.toFixed(2)}ms`,
+      `- No-mutation share delta: ${comparison.deltas.wastedPercentage.toFixed(2)} points`,
+      `- Budget violation delta: ${comparison.deltas.budgetViolationCount}`, '');
+    comparison.regressions.forEach(message => lines.push(`- ❌ ${message}`));
+    if (comparison.regressions.length) lines.push('');
+  }
+  lines.push('## Interaction metrics', '', `- Cycles: ${report.metrics.cycleCount}`,
+    `- Total cycle time: ${report.metrics.totalCycleDuration}ms`, `- Maximum cycle: ${report.metrics.maxCycleDuration}ms`,
+    `- No-mutation check share: ${report.metrics.wastedPercentage}%`, `- Budget violations: ${report.metrics.budgetViolationCount}`, '', '## Ranked findings', '');
+  if (!report.findings.length) lines.push('No actionable findings were observed.');
+  report.findings.forEach((finding, index) => lines.push(`### ${index + 1}. ${finding.title}`, '', finding.summary, '', `**Evidence:** ${finding.evidence.join('; ')}`, '', `**Next action:** ${finding.action}`, ''));
+  lines.push('> CPU/FPS are context only. Detached hosts and OnPush opportunities require verification.');
+  return lines.join('\n');
+}
+
+function portableHtml(report: PortableReport, markdown: string): string {
+  const escaped = markdown.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${report.name.replace(/[<>]/g, '')}</title><style>body{font:15px/1.5 system-ui;max-width:900px;margin:40px auto;padding:0 20px;color:#172033}pre{white-space:pre-wrap;border:1px solid #dbe2ea;border-radius:12px;padding:22px;background:#f8fafc}</style></head><body><pre>${escaped}</pre></body></html>`;
+}
+
+async function runReport(args: string[]): Promise<void> {
+  const input = optionValue(args, '--input');
+  if (!input) throw new Error('report requires --input <interaction-report.json>');
+  const candidate = readPortableReport(input);
+  const baselinePath = optionValue(args, '--baseline');
+  const comparison = baselinePath ? comparePortableReports(readPortableReport(baselinePath), candidate) : undefined;
+  const format = optionValue(args, '--format') ?? 'markdown';
+  const markdown = portableMarkdown(candidate, comparison);
+  const rendered = format === 'json'
+    ? JSON.stringify(comparison ? { report: candidate, comparison } : candidate, null, 2)
+    : format === 'html' ? portableHtml(candidate, markdown) : markdown;
+  if (!['markdown', 'html', 'json'].includes(format)) throw new Error(`Unsupported format: ${format}`);
+  const output = optionValue(args, '--output');
+  if (output) {
+    writeFile(path.resolve(output), rendered + (format === 'html' ? '' : '\n'));
+    ok(`Wrote ${format} report to ${output}`);
+  } else {
+    log(rendered);
+  }
+  if (args.includes('--github-summary')) {
+    const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+    if (!summaryPath) warn('GITHUB_STEP_SUMMARY is not set; skipped job summary.');
+    else fs.appendFileSync(summaryPath, markdown + '\n', 'utf-8');
+  }
+  if (args.includes('--fail-on-regression') && comparison?.outcome === 'regressed') {
+    process.exitCode = 1;
+  }
+}
+
 // ─── File discovery helpers ───────────────────────────────────────────────────
 
 function findUp(filename: string, startDir = process.cwd()): string | null {
@@ -520,22 +627,37 @@ export async function run(): Promise<void> {
     return;
   }
 
+  if (command === 'report') {
+    await runReport(rest);
+    return;
+  }
+
   if (command === '--help' || command === '-h' || command === 'help') {
     log('');
     log(`${c.bold}Usage:${c.reset} npx angular-render-scan-cli [command] [options]`);
     log('');
     log(`${c.bold}Commands:${c.reset}`);
     log('  init              Auto-patch your Angular project (default)');
+    log('  report            Render a capture or compare it with a baseline');
     log('');
     log(`${c.bold}Options for init:${c.reset}`);
     log('  --force           Patch even if angular-render-scan is already present');
     log('  --dry-run         Show what would be patched without writing files');
     log('  --script-tag      Use CDN script tag in index.html instead of provider');
     log('');
+    log(`${c.bold}Options for report:${c.reset}`);
+    log('  --input <file>    Candidate interaction report JSON');
+    log('  --baseline <file> Baseline interaction report JSON');
+    log('  --format <type>   markdown (default), html, or json');
+    log('  --output <file>   Write output instead of stdout');
+    log('  --github-summary  Append Markdown to GITHUB_STEP_SUMMARY');
+    log('  --fail-on-regression  Exit 1 when guardrails regress');
+    log('');
     log(`${c.bold}Examples:${c.reset}`);
     log('  npx angular-render-scan-cli init');
     log('  npx angular-render-scan-cli init --dry-run');
     log('  npx angular-render-scan-cli init --script-tag');
+    log('  npx angular-render-scan-cli report --input candidate.json --baseline baseline.json --github-summary --fail-on-regression');
     log('');
     return;
   }

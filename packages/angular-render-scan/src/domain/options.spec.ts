@@ -66,14 +66,15 @@ describe('options', () => {
 
   it('validates budget, editorProtocol and darkMode options', () => {
     setResolvedOptions({
+      budgets: { warnMs: 6, errorMs: 18 },
       editorProtocol: 'cursor',
       darkMode: 'dark'
     });
 
     const resolved = getResolvedOptions();
     expect(resolved.budgets).toMatchObject({
-      warnMs: 10,
-      errorMs: 30,
+      warnMs: 6,
+      errorMs: 18,
       maxRendersPerSecond: 20
     });
     expect(resolved.editorProtocol).toBe('cursor');

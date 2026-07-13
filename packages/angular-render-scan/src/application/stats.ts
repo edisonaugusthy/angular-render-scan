@@ -195,16 +195,19 @@ export function finishCycle(
   finishedAt: number,
   options?: AngularRenderScanResolvedOptions
 ): AngularRenderCycle {
-  const entries = [...components.values()]
+  const cycleEntries = [...components.values()]
     .filter((component) => component.latestCycleId === id && component.element.isConnected)
     .map(toEntry)
+    .sort((a, b) => b.latestDuration - a.latestDuration);
+  const entries = cycleEntries
     .filter((entry) => shouldIncludeEntry(entry, options))
     .sort((a, b) => b.latestDuration - a.latestDuration);
 
   const waterfall = [...activeCycleWaterfall];
 
-  const checked = entries.length;
-  const changed = entries.filter((e) => e.mutationType !== 'none').length;
+  // Filters control presentation, not the accuracy of cycle-level telemetry.
+  const checked = cycleEntries.length;
+  const changed = cycleEntries.filter((e) => e.mutationType !== 'none').length;
   const wasteScore = checked === 0 ? 0 : Math.round(((checked - changed) / checked) * 100);
 
   return {
@@ -269,6 +272,11 @@ export function getWastedStats(): { totalChecks: number; wastedChecks: number; w
 }
 
 export function getLeakedComponents(): AngularRenderEntry[] {
+  return getDetachedComponents();
+}
+
+/** Components whose host element is currently disconnected. This alone does not prove retention. */
+export function getDetachedComponents(): AngularRenderEntry[] {
   return [...components.values()]
     .filter((stats) => !stats.element.isConnected)
     .map(toEntry);

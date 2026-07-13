@@ -80,7 +80,11 @@ export function resolveOptions(next?: AngularRenderScanOptions, config: ResolveO
   merged.showCdGraph = typeof next?.showCdGraph === 'boolean' ? next.showCdGraph : options.showCdGraph;
   merged.trackReferentialStability = typeof next?.trackReferentialStability === 'boolean' ? next.trackReferentialStability : options.trackReferentialStability;
   merged.theme = { ...options.theme, ...(next?.theme || {}) };
-  merged.budgets = defaultBudgets;
+  merged.budgets = {
+    ...defaultBudgets,
+    ...options.budgets,
+    ...(next?.budgets || {}),
+  };
   merged.editorProtocol = typeof next?.editorProtocol === 'string' ? next.editorProtocol : options.editorProtocol;
   merged.darkMode = ['auto', 'dark', 'light'].includes(next?.darkMode as string) ? next!.darkMode! : options.darkMode;
   merged.onPushCandidateThreshold = normalizeNonNegative(merged.onPushCandidateThreshold, defaultOptions.onPushCandidateThreshold);

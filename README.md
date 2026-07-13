@@ -1,35 +1,37 @@
 # Angular Render Scan
 
-Angular Render Scan is a visual debugging overlay for Angular change detection. It shows which components update, how often they update, and which checks are slow or wasted.
+Angular Render Scan turns a named user interaction into ranked Angular change-detection findings, a before/after comparison, and a portable report for developers and CI.
 
 ![Angular Render Scan in Action](docs/assets/angular-render-scan-demo.gif)
 
 [Live Demo](https://edisonaugusthy.github.io/angular-render-scan/) | [npm](https://www.npmjs.com/package/angular-render-scan)
 
-## Versions
+## Compatibility
 
 | Package                   | Version   |
 | ------------------------- | --------- |
-| Angular                   | `^22.0.0` |
-| `angular-render-scan`     | `0.1.8`   |
-| `angular-render-scan-cli` | `0.1.5`   |
+| Angular provider mode     | `17+`     |
+| Script-tag overlay        | `9+`      |
+| `angular-render-scan`     | `0.1.13`  |
+| `angular-render-scan-cli` | `0.1.13`  |
 
 ## What it shows
 
 - Component render outlines and heatmap colors.
 - Slow render and budget violation alerts.
 - Change detection trigger labels such as `zone:click`, `signal:write`, and `router:navigation`.
-- OnPush candidates, referentially unstable inputs, and suspected Zone pollution.
-- A copyable AI performance prompt for slow/error components.
-- Session export JSON for deeper debugging.
+- Ranked, evidence-backed findings for a named interaction.
+- Before/after verification with regression guardrails.
+- Markdown, HTML, and JSON reports for local review and pull requests.
+- OnPush experiments, referentially unstable inputs, and Zone.js-only pollution leads.
 
 ## Install
 
 ```sh
-npm install angular-render-scan
+npm install -D angular-render-scan
 ```
 
-Angular Render Scan expects Angular 9+.
+Provider mode supports Angular 17+ (including signals and zoneless applications). For Angular 9–16, use the framework-independent script-tag build; automatic component instrumentation requires provider mode.
 
 ## Setup with the CLI
 
@@ -112,12 +114,25 @@ import {
   getOptions,
   getReferentialInstability,
   getZonePollutionEvents,
+  beginInteraction,
+  endInteraction,
+  compareInteractionReports,
+  formatInteractionReportMarkdown,
   scan,
   setOptions,
   stop,
 } from "angular-render-scan";
 
 scan();
+beginInteraction("Add product to cart");
+// Perform the interaction.
+const baseline = endInteraction();
+
+beginInteraction("Add product to cart");
+// Perform the interaction after a candidate fix.
+const candidate = endInteraction();
+console.log(compareInteractionReports(baseline, candidate));
+console.log(formatInteractionReportMarkdown(candidate));
 setOptions({ enabled: false });
 setOptions({ enabled: true, log: true });
 
@@ -133,9 +148,11 @@ console.log(getCdGraph());
 stop();
 ```
 
-## Toolbar
+## Interaction workflow
 
-The toolbar shows render count, FPS, latest cycle time, slowest component, trigger source, OnPush candidates, Zone pollution events, alerts, and copy/export actions.
+Click `Capture`, name the interaction, perform it, then click `Finish`. The diagnosis panel ranks findings by impact and gives a concrete next action. Click `Use as baseline`, apply a fix, and capture the same interaction again to see an improved, unchanged, or regressed result. Markdown and standalone HTML exports are available from the panel.
+
+FPS is shown only as environmental context. A disconnected component host is not labeled a memory leak without heap evidence, and an OnPush opportunity percentage is an observed no-mutation check share—not a predicted saving. Zone pollution guidance applies only when the app uses Zone.js. CD Graph and Waterfall remain advanced runtime APIs rather than primary diagnosis surfaces.
 
 Useful shortcuts:
 
@@ -148,11 +165,11 @@ Useful shortcuts:
 | `Alt+Shift+T` | Toggle toolbar             |
 | `Escape`      | Close open panels          |
 
-## Details and AI Prompt
+## Details and developer handoff
 
 Enable `Details` in the toolbar, hover a captured component, then click it to pin a recommendation panel. The panel shows timing, render count, reason, selector, changed inputs, recent cycles, and local Angular recommendations.
 
-Use `Copy Slow Issues Prompt` to copy a focused prompt for an AI coding assistant. It includes recent cycle history, thresholds, and slow/error component evidence without copying DOM nodes, component instances, or source code.
+The ranked interaction report is the primary output. For a secondary AI handoff, call `copyAIPrompt()` or use `Alt+Shift+C`; it copies recent telemetry evidence without DOM nodes, component instances, or source code.
 
 ## Playwright Audit
 
@@ -163,7 +180,7 @@ import { startRenderAudit } from "angular-render-scan";
 test("no render regression", async ({ page }) => {
   await page.goto("/");
 
-  const audit = await startRenderAudit(page);
+  const audit = await startRenderAudit(page, "Add product to cart");
   await page.click("button.expensive-operation");
   const report = await audit.stop();
 
@@ -173,6 +190,16 @@ test("no render regression", async ({ page }) => {
   expect(await report.wastedRenderPercentage()).toBeLessThan(20);
   expect(await report.budgetViolations()).toHaveLength(0);
 });
+```
+
+Persist `await report.interactionReport()` as JSON in your test artifact directory. A single CLI command can then create a PR summary and fail on a material regression:
+
+```sh
+npx angular-render-scan-cli report \
+  --input artifacts/candidate.json \
+  --baseline performance-baseline.json \
+  --github-summary \
+  --fail-on-regression
 ```
 
 ## Production Behavior

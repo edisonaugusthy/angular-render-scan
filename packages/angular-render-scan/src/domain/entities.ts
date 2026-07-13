@@ -50,7 +50,9 @@ export interface OnPushCandidate {
   totalChecks: number;
   wastedChecks: number;
   wastedPercentage: number;
-  /** Estimated % of total CD time saved by switching to OnPush */
+  /** Share of observed checks that produced no DOM mutation. This is not a verified saving. */
+  opportunityPercentage: number;
+  /** @deprecated Use opportunityPercentage. Kept for backwards compatibility. */
   estimatedSavingPct: number;
   confidence: 'high' | 'medium' | 'low';
   reason: string;
@@ -246,11 +248,81 @@ export interface SessionExportData {
   cycles: SessionCycleData[];
   wastedStats: WastedStats;
   budgetViolations: BudgetViolation[];
+  /** Components whose host element was disconnected when sampled. This does not prove a memory leak. */
+  detachedComponents?: string[];
+  /** @deprecated Use detachedComponents. */
   leakedComponents: string[];
   /** NEW */
   onPushCandidates: OnPushCandidate[];
   zonePollutionEvents: ZonePollutionEvent[];
   referentialInstabilityReports: ReferentialInstabilityReport[];
+}
+
+export type InteractionFindingKind =
+  | 'budget-violation'
+  | 'slow-component'
+  | 'wasted-checks'
+  | 'onpush-opportunity'
+  | 'referential-instability'
+  | 'zone-pollution'
+  | 'detached-component';
+
+export type InteractionFindingSeverity = 'critical' | 'high' | 'medium' | 'low';
+
+export interface InteractionFinding {
+  kind: InteractionFindingKind;
+  severity: InteractionFindingSeverity;
+  confidence: 'high' | 'medium' | 'low';
+  score: number;
+  title: string;
+  summary: string;
+  componentName?: string;
+  evidence: string[];
+  action: string;
+}
+
+export interface InteractionMetrics {
+  cycleCount: number;
+  componentCheckCount: number;
+  totalCycleDuration: number;
+  maxCycleDuration: number;
+  wastedChecks: number;
+  wastedPercentage: number;
+  budgetViolationCount: number;
+}
+
+export interface InteractionReport {
+  schemaVersion: 1;
+  name: string;
+  startedAt: string;
+  finishedAt: string;
+  url: string;
+  viewport: string;
+  metrics: InteractionMetrics;
+  findings: InteractionFinding[];
+  session: SessionExportData;
+}
+
+export interface InteractionMetricDelta {
+  baseline: number;
+  candidate: number;
+  absolute: number;
+  percentage: number | null;
+}
+
+export interface InteractionComparison {
+  schemaVersion: 1;
+  name: string;
+  outcome: 'improved' | 'regressed' | 'unchanged';
+  baseline: InteractionReport;
+  candidate: InteractionReport;
+  deltas: {
+    totalCycleDuration: InteractionMetricDelta;
+    maxCycleDuration: InteractionMetricDelta;
+    wastedPercentage: InteractionMetricDelta;
+    budgetViolationCount: InteractionMetricDelta;
+  };
+  regressions: string[];
 }
 
 export interface SessionCycleData {
@@ -304,6 +376,7 @@ export interface AngularRenderScanOptions {
   showCopyPrompt?: boolean;
   promptContext?: string;
   theme?: Partial<AngularRenderScanTheme>;
+  budgets?: AngularRenderScanBudgets;
   editorProtocol?: 'vscode' | 'webstorm' | 'cursor' | string;
   darkMode?: AngularRenderScanDarkMode;
   onCycleStart?: () => void;

@@ -1,6 +1,6 @@
 # angular-render-scan-cli
 
-CLI installer for [angular-render-scan](https://www.npmjs.com/package/angular-render-scan).
+CLI installer and CI report generator for [angular-render-scan](https://www.npmjs.com/package/angular-render-scan).
 
 ## Usage
 
@@ -21,6 +21,21 @@ npx angular-render-scan-cli --help
 - `--dry-run`: preview changes without writing files.
 - `--script-tag`: add the CDN script tag instead of provider setup.
 - `--force`: patch even if `angular-render-scan` is already present.
+
+## CI performance report
+
+Save the `InteractionReport` returned by `report.interactionReport()` in a Playwright test, then render or compare it:
+
+```sh
+npx angular-render-scan-cli report --input candidate.json --format markdown
+npx angular-render-scan-cli report \
+  --input candidate.json \
+  --baseline baseline.json \
+  --github-summary \
+  --fail-on-regression
+```
+
+`--format` accepts `markdown`, `html`, or `json`; `--output` writes to a file. In GitHub Actions, `--github-summary` appends the result to the job summary. `--fail-on-regression` exits with status 1 when total or maximum cycle time rises more than 10%, no-mutation check share rises more than 5 points, or new budget violations appear.
 
 ## Docs
 
