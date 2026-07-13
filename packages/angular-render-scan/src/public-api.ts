@@ -8,12 +8,22 @@ export {
   getSessionData,
   getWastedStats,
   getLeakedComponents,
+  getDetachedComponents,
   getOnPushCandidates,
   getReferentialInstability,
   getZonePollutionEvents,
   getCdGraph,
   getSignalDependencyGraph,
-  getComponentCostAnalysis
+  getComponentCostAnalysis,
+  beginInteraction,
+  endInteraction,
+  getInteractionReport,
+  setInteractionBaseline,
+  compareWithInteractionBaseline,
+  compareInteractionReports,
+  createInteractionReport,
+  formatInteractionReportMarkdown,
+  formatInteractionReportHtml
 } from './application/runtime';
 export {
   AngularRenderScanMarkDirective,
@@ -41,7 +51,16 @@ export type {
   ZonePollutionEvent as ZonePollutionEventType,
   CdGraph,
   CdGraphNode,
-  CdGraphEdge
+  CdGraphEdge,
+  SignalDependencyGraph,
+  ComponentCostEntry,
+  InteractionFinding,
+  InteractionFindingKind,
+  InteractionFindingSeverity,
+  InteractionMetrics,
+  InteractionReport,
+  InteractionMetricDelta,
+  InteractionComparison
 } from './domain/entities';
 export { startRenderAudit } from './testing';
 export type { RenderAuditReport, RenderAuditSession } from './testing';

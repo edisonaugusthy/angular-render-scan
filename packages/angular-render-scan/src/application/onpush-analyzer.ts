@@ -48,19 +48,18 @@ export function analyzeOnPushCandidates(
 
     if (wastedPct < wastedThresholdPct) continue;
 
-    // Estimate savings: if OnPush, only renders when inputs change
-    // So saving is approximately (wasted checks / total checks)
-    const estimatedSavingPct = wastedPct;
+    // This is an observed opportunity share, not a prediction of OnPush savings.
+    const opportunityPercentage = wastedPct;
 
     let confidence: 'high' | 'medium' | 'low';
     let reason: string;
 
     if (wastedPct >= 80) {
       confidence = 'high';
-      reason = `${wastedPct}% of renders produced no DOM changes — component only needs to update when its @Input() props change.`;
+      reason = `${wastedPct}% of observed checks produced no DOM mutation. Validate inputs, events, and side effects before trying OnPush.`;
     } else if (wastedPct >= 60) {
       confidence = 'medium';
-      reason = `${wastedPct}% of renders were wasted no-ops. OnPush would significantly reduce unnecessary checks.`;
+      reason = `${wastedPct}% of observed checks produced no DOM mutation. OnPush is worth testing, but the saving is not yet verified.`;
     } else {
       confidence = 'low';
       reason = `${wastedPct}% wasted renders detected. Review whether this component has internal side effects before switching to OnPush.`;
@@ -72,7 +71,8 @@ export function analyzeOnPushCandidates(
       totalChecks: comp.totalChecks,
       wastedChecks: comp.wastedChecks,
       wastedPercentage: wastedPct,
-      estimatedSavingPct,
+      opportunityPercentage,
+      estimatedSavingPct: opportunityPercentage,
       confidence,
       reason
     });
@@ -83,6 +83,6 @@ export function analyzeOnPushCandidates(
     const confScore = { high: 3, medium: 2, low: 1 };
     const byConf = confScore[b.confidence] - confScore[a.confidence];
     if (byConf !== 0) return byConf;
-    return b.estimatedSavingPct - a.estimatedSavingPct;
+    return b.opportunityPercentage - a.opportunityPercentage;
   });
 }

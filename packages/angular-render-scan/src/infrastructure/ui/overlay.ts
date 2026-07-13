@@ -8,12 +8,18 @@ import {
   getRecording,
   getSessionData,
   getWastedStats,
-  getLeakedComponents,
+  getDetachedComponents,
   getRegisteredComponents,
   getOnPushCandidates,
   getReferentialInstability,
   getZonePollutionEvents,
   getCdGraph,
+  beginInteraction,
+  endInteraction,
+  setInteractionBaseline,
+  compareInteractionReports,
+  formatInteractionReportMarkdown,
+  formatInteractionReportHtml,
 } from "../../application/runtime";
 import type {
   AngularRenderCycle,
@@ -23,6 +29,8 @@ import type {
   OnPushCandidate,
   ZonePollutionEvent,
   CdTriggerAttribution,
+  InteractionComparison,
+  InteractionReport,
 } from "../../domain/entities";
 
 interface ActiveHighlight {
@@ -1135,6 +1143,11 @@ export class AngularRenderScanOverlay {
   private detailsMode = false;
   private copyStatus = "";
   private copyStatusTimer = 0;
+  private interactionCapturing = false;
+  private interactionReport?: InteractionReport;
+  private interactionBaseline?: InteractionReport;
+  private interactionComparison?: InteractionComparison;
+  private showDiagnosisPanel = false;
 
   private toolbarX = 16;
   private toolbarY = 16;
@@ -1889,7 +1902,7 @@ export class AngularRenderScanOverlay {
     const cpuClass = cpuVal > 50 ? "cpu-high" : cpuVal > 20 ? "cpu-medium" : "";
 
     const wasted = getWastedStats();
-    const leaks = getLeakedComponents();
+    const detached = getDetachedComponents();
     const onPushCandidates = getOnPushCandidates();
     const pollutionEvents = getZonePollutionEvents();
 
@@ -1927,12 +1940,12 @@ export class AngularRenderScanOverlay {
       sparklineSvg = `<span class="metric"><span class="label">Timeline</span><span class="value">-</span></span>`;
     }
 
-    // Leaks metric chip
-    const leaksChip =
-      leaks.length > 0
-        ? `<span class="metric diagnostic-chip leak-toggle" style="cursor: pointer;" data-tooltip="Memory Leak Warning: detected ${leaks.length} components whose elements were disconnected but not destroyed. Click to inspect first leak.">
-          <span class="label" style="color: #ef4444;">Leaks</span>
-          <span class="value" style="color: #ef4444; font-weight: bold;">${leaks.length}</span>
+    // Disconnected hosts are a lead for heap analysis, not proof of a leak.
+    const detachedChip =
+      detached.length > 0
+        ? `<span class="metric diagnostic-chip detached-toggle" style="cursor: pointer;" data-tooltip="${detached.length} component host element(s) were disconnected when sampled. This does not prove memory retention.">
+          <span class="label" style="color: #f59e0b;">Detached</span>
+          <span class="value" style="color: #f59e0b; font-weight: bold;">${detached.length}</span>
         </span>`
         : "";
 
@@ -1958,7 +1971,7 @@ export class AngularRenderScanOverlay {
     // OnPush candidates chip
     const onPushChip =
       onPushCandidates.length > 0
-        ? `<span class="metric diagnostic-chip onpush-toggle" style="cursor: pointer;" data-tooltip="OnPush Candidates: ${onPushCandidates.length} component(s) using Default CD could save renders by switching to OnPush. Click to view.">
+        ? `<span class="metric diagnostic-chip onpush-toggle" style="cursor: pointer;" data-tooltip="OnPush experiments: ${onPushCandidates.length} component(s) had a high no-mutation check share. Verify with a before/after capture.">
           <span class="label" style="color: #7c3aed;">OnPush</span>
           <span class="value" style="color: #7c3aed; font-weight: bold;">${onPushCandidates.length}</span>
         </span>`
@@ -1979,6 +1992,7 @@ export class AngularRenderScanOverlay {
       container,
       `
       ${this.options.enabled ? this.streamlinedInspectPanelHtml() : ""}
+      ${this.options.enabled ? this.diagnosisPanelHtml() : ""}
       <div class="toolbar ${this.options.enabled ? (compactToolbar ? "compact" : "expanded") : "disabled"}" style="right: ${this.toolbarX}px; bottom: ${this.toolbarY}px;">
         <label class="switch scanner-power" data-tooltip="${this.options.enabled ? "Pause render scanning" : "Resume render scanning"}">
           <input type="checkbox" ${this.options.enabled ? "checked" : ""} aria-label="Angular Render Scan enabled" />
@@ -1987,25 +2001,22 @@ export class AngularRenderScanOverlay {
         </label>
         ${this.options.enabled ? `
         <div class="toolbar-main">
-          ${this.metric("FPS", this.options.showFPS ? String(displayedFps) + " fps" : "-", this.getFpsClass(displayedFps))}
           ${this.metric("Cycle", cycle ? `${cycle.duration.toFixed(1)}ms` : "-")}
         </div>
         ${compactToolbar ? "" : `
         <div class="toolbar-extended">
           ${this.metric("Last cycle", cycle ? `${cycle.duration.toFixed(1)}ms${cycleWasteText}` : "-")}
-          <span class="metric graph-toggle ${this.showGraphPanel ? "active" : ""}" style="cursor:pointer;" data-tooltip="Live CD render graph — shows how change detection propagates through the component tree. Click to toggle.">
-            <span class="label">CD Graph</span>
-            <span class="value" style="color:#06b6d4;">Graph</span>
-          </span>
           ${this.metric("Slowest", cycle?.slowest ? cycle.slowest.name : "-", "", "slowest-metric")}
           ${triggerBadge}
-          ${leaksChip}
+          ${detachedChip}
           ${alertsChip}
           ${onPushChip}
           ${pollutionChip}
+          ${this.metric("Context FPS", this.options.showFPS ? String(displayedFps) : "-", this.getFpsClass(displayedFps))}
         </div>
         `}
         <span class="toolbar-actions">
+          <button class="action-btn interaction-capture-btn ${this.interactionCapturing ? "active" : ""}" aria-pressed="${this.interactionCapturing}" data-tooltip="${this.interactionCapturing ? "Finish and rank this interaction" : "Start a named interaction capture"}">${this.interactionCapturing ? "Finish" : "Capture"}</button>
           <button class="clear-btn" aria-label="Clear stats" data-tooltip="Clear current render stats.">Reset</button>
           <button class="action-btn details-toggle toolbar-picker-toggle ${this.detailsMode ? "active" : ""}" aria-pressed="${this.detailsMode}" aria-label="Enable component details panel" data-tooltip="Use the picker to inspect a component on hover. Clicks continue to the app.">
             <span>Inspect</span>
@@ -2095,17 +2106,67 @@ export class AngularRenderScanOverlay {
       { once: true },
     );
 
-    toolbarEl?.querySelector(".leak-toggle")?.addEventListener(
+    toolbarEl?.querySelector(".detached-toggle")?.addEventListener(
       "click",
       () => {
         this.detailsMode = true;
-        if (leaks.length > 0) {
-          this.selectedEntry = leaks[0];
+        if (detached.length > 0) {
+          this.selectedEntry = detached[0];
         }
         this.renderToolbar();
       },
       { once: true },
     );
+
+    toolbarEl?.querySelector(".interaction-capture-btn")?.addEventListener(
+      "click",
+      () => {
+        if (!this.interactionCapturing) {
+          const name = window.prompt("Name the interaction to measure", "Primary interaction")?.trim();
+          if (!name) return;
+          beginInteraction(name);
+          this.interactionCapturing = true;
+          this.interactionComparison = undefined;
+          this.showDiagnosisPanel = false;
+          this.setCopyStatus("Capture started");
+        } else {
+          this.interactionReport = endInteraction();
+          this.interactionCapturing = false;
+          this.showDiagnosisPanel = true;
+          if (this.interactionBaseline) {
+            this.interactionComparison = compareInteractionReports(this.interactionBaseline, this.interactionReport);
+          }
+          this.renderToolbar();
+        }
+      },
+      { once: true },
+    );
+
+    container.querySelector(".diagnosis-close-btn")?.addEventListener("click", () => { this.showDiagnosisPanel = false; this.renderToolbar(); }, { once: true });
+    container.querySelector(".diagnosis-baseline-btn")?.addEventListener("click", () => {
+      if (!this.interactionReport) return;
+      this.interactionBaseline = this.interactionReport;
+      setInteractionBaseline(this.interactionReport);
+      this.interactionComparison = undefined;
+      this.setCopyStatus("Baseline saved");
+      this.renderToolbar();
+    }, { once: true });
+    container.querySelector(".diagnosis-copy-btn")?.addEventListener("click", async () => {
+      if (!this.interactionReport) return;
+      const copied = await navigator.clipboard.writeText(formatInteractionReportMarkdown(this.interactionReport)).then(() => true, () => false);
+      this.setCopyStatus(copied ? "Report copied" : "Copy failed");
+    }, { once: true });
+    container.querySelector(".diagnosis-html-btn")?.addEventListener("click", () => {
+      if (!this.interactionReport) return;
+      const blob = new Blob([formatInteractionReportHtml(this.interactionReport)], { type: "text/html" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `angular-render-scan-${this.interactionReport.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.html`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      this.setCopyStatus("HTML report exported");
+    }, { once: true });
 
     toolbarEl?.querySelector(".clear-btn")?.addEventListener(
       "click",
@@ -2446,9 +2507,9 @@ export class AngularRenderScanOverlay {
       : "";
 
     const leakWarningHtml = !entry.element?.isConnected
-      ? `<div style="background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; border-radius: 6px; padding: 6px 10px; color: #ef4444; font-weight: bold; font-size: 10px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+      ? `<div style="background: rgba(245, 158, 11, 0.12); border: 1px solid #f59e0b; border-radius: 6px; padding: 6px 10px; color: #b45309; font-weight: bold; font-size: 10px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
           <span style="font-size: 14px;">⚠️</span>
-          <span>Memory Leak Warning: Element is disconnected from the DOM but was not destroyed!</span>
+          <span>Detached host observed. Confirm retention with a heap snapshot before calling this a memory leak.</span>
          </div>`
       : "";
 
@@ -2725,7 +2786,7 @@ export class AngularRenderScanOverlay {
     label: string;
   } {
     if (entry.element && !entry.element.isConnected) {
-      return { kind: "slow", label: "Memory Leak" };
+      return { kind: "medium", label: "Detached" };
     }
     const maxDuration = Math.max(entry.latestDuration, entry.averageDuration);
     if (maxDuration >= this.slowThresholdMs) {
@@ -2762,9 +2823,9 @@ export class AngularRenderScanOverlay {
 
     if (entry.element && !entry.element.isConnected) {
       recommendations.push({
-        category: "Memory Leak",
-        action: `Component element is disconnected from the DOM but was not destroyed. Make sure subscriptions and global events are cleanly unsubscribed (e.g. takeUntilDestroyed).`,
-        severity: "slow",
+        category: "Detached host",
+        action: `The host is disconnected. Use a heap snapshot or allocation profile to verify the component is retained before changing cleanup logic.`,
+        severity: "medium",
       });
     }
 
@@ -3000,6 +3061,40 @@ export class AngularRenderScanOverlay {
     `;
   }
 
+  private diagnosisPanelHtml(): string {
+    const report = this.interactionReport;
+    if (!this.showDiagnosisPanel || !report) return "";
+    const comparison = this.interactionComparison;
+    const outcomeColor = comparison?.outcome === "regressed" ? "#ef4444" : comparison?.outcome === "improved" ? "#10b981" : "#64748b";
+    const comparisonHtml = comparison
+      ? `<div style="padding:8px;border:1px solid ${outcomeColor};border-radius:7px;background:var(--ars-card-bg)">
+          <div style="font-size:10px;font-weight:850;color:${outcomeColor};text-transform:uppercase">Candidate ${comparison.outcome}</div>
+          <div style="font-size:9px;color:var(--ars-label);margin-top:3px">Total cycle time ${comparison.deltas.totalCycleDuration.absolute > 0 ? "+" : ""}${comparison.deltas.totalCycleDuration.absolute}ms · Max cycle ${comparison.deltas.maxCycleDuration.absolute > 0 ? "+" : ""}${comparison.deltas.maxCycleDuration.absolute}ms · No-mutation share ${comparison.deltas.wastedPercentage.absolute > 0 ? "+" : ""}${comparison.deltas.wastedPercentage.absolute}pt</div>
+          ${comparison.regressions.length ? `<div style="font-size:9px;color:#ef4444;margin-top:4px">${escapeHtml(comparison.regressions.join(" "))}</div>` : ""}
+        </div>`
+      : "";
+    const findingRows = report.findings.slice(0, 5).map((item, index) => `
+      <div style="padding:8px;border:1px solid var(--ars-border);border-radius:7px;background:var(--ars-card-bg)">
+        <div style="display:flex;gap:6px;align-items:flex-start"><span style="font-size:9px;font-weight:850;color:#2563eb">${index + 1}</span><div style="min-width:0"><div style="font-size:10px;font-weight:800;color:var(--ars-color)">${escapeHtml(item.title)}</div><div style="font-size:9px;color:var(--ars-label);line-height:1.4;margin-top:2px">${escapeHtml(item.summary)}</div></div></div>
+        <div style="font-size:9px;color:var(--ars-color);line-height:1.35;margin-top:5px"><strong>Next:</strong> ${escapeHtml(item.action)}</div>
+      </div>`).join("");
+    return `
+      <section class="diagnosis-panel" aria-label="Interaction diagnosis" style="position:fixed;right:${this.toolbarX}px;bottom:${this.toolbarY + 56}px;width:min(360px,calc(100vw - 24px));max-height:min(560px,calc(100vh - 90px));overflow:auto;background:var(--ars-panel-bg);border:1px solid var(--ars-border);border-top:3px solid #2563eb;border-radius:12px;padding:10px;box-shadow:var(--ars-shadow);pointer-events:auto;z-index:2147483647;box-sizing:border-box">
+        <header style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;border-bottom:1px solid var(--ars-border);padding-bottom:8px;margin-bottom:8px">
+          <div><div style="font-size:12px;font-weight:850;color:var(--ars-color)">${escapeHtml(report.name)}</div><div style="font-size:9px;color:var(--ars-label)">${report.metrics.cycleCount} cycles · ${report.metrics.totalCycleDuration}ms total · ${report.metrics.wastedPercentage}% no-mutation</div></div>
+          <button class="diagnosis-close-btn" aria-label="Close diagnosis" style="border:0;background:none;color:var(--ars-label);font-size:16px;cursor:pointer">×</button>
+        </header>
+        ${comparisonHtml}
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:${comparisonHtml ? 8 : 0}px">${findingRows || `<div style="padding:14px;text-align:center;color:var(--ars-label);font-size:10px">No actionable finding in this capture.</div>`}</div>
+        <footer style="display:flex;gap:6px;flex-wrap:wrap;border-top:1px solid var(--ars-border);padding-top:8px;margin-top:8px">
+          <button class="diagnosis-baseline-btn action-btn">Use as baseline</button>
+          <button class="diagnosis-copy-btn action-btn">Copy Markdown</button>
+          <button class="diagnosis-html-btn action-btn">Export HTML</button>
+        </footer>
+        <div style="font-size:8px;color:var(--ars-label);margin-top:7px;line-height:1.35">CPU/FPS are context only. Detached hosts and OnPush opportunities require verification.</div>
+      </section>`;
+  }
+
   private onPushPanelHtml(candidates: OnPushCandidate[]): string {
     if (!this.showOnPushPanel || candidates.length === 0) return "";
     const panelRight = this.toolbarX;
@@ -3028,9 +3123,7 @@ export class AngularRenderScanOverlay {
             <span style="font-size: 8px; font-weight: 800; color: ${confColor}; border: 1px solid ${confColor}; padding: 1px 4px; border-radius: 4px; white-space: nowrap; flex-shrink: 0;">${confLabel}</span>
           </div>
           <div style="display: flex; gap: 6px; align-items: center;">
-            <span style="color: #ef4444; font-weight: 700;">${c.wastedPercentage}% wasted</span>
-            <span style="color: var(--ars-label);">→</span>
-            <span style="color: #10b981; font-weight: 700;">~${c.estimatedSavingPct}% saving</span>
+            <span style="color: #f59e0b; font-weight: 700;">${c.opportunityPercentage}% no-mutation share</span>
           </div>
           <div style="color: var(--ars-label); line-height: 1.35; font-size: 9px;">${escapeHtml(c.reason)}</div>
           <div style="width: 100%; height: 3px; background: #e2e8f0; border-radius: 2px; overflow: hidden; margin-top: 2px;">
@@ -3048,7 +3141,7 @@ export class AngularRenderScanOverlay {
           <button class="onpush-close-btn" style="background: none; border: none; color: var(--ars-label); cursor: pointer; font-size: 14px; font-weight: bold; line-height: 1;">×</button>
         </div>
         <div style="font-size: 9px; color: var(--ars-label); line-height: 1.35; padding-bottom: 2px;">
-          These components use Default CD with high wasted render rates. Adding <code style="background: rgba(0,0,0,0.06); padding: 1px 3px; border-radius: 3px;">ChangeDetectionStrategy.OnPush</code> could significantly reduce unnecessary checks.
+          These are experiments, not predicted savings. Apply <code style="background: rgba(0,0,0,0.06); padding: 1px 3px; border-radius: 3px;">ChangeDetectionStrategy.OnPush</code> only in a candidate change and verify the same interaction before and after.
         </div>
         <div style="display: flex; flex-direction: column; gap: 6px; overflow-y: auto; flex: 1;">
           ${items}
@@ -3100,7 +3193,7 @@ export class AngularRenderScanOverlay {
           <button class="zone-pollution-close-btn" style="background: none; border: none; color: var(--ars-label); cursor: pointer; font-size: 14px; font-weight: bold; line-height: 1;">×</button>
         </div>
         <div style="font-size: 9px; color: var(--ars-label); line-height: 1.35; padding-bottom: 2px;">
-          These CD cycles were triggered by async operations with no user interaction — suspected Zone.js pollution. Use <code style="background: rgba(0,0,0,0.06); padding: 1px 3px; border-radius: 3px;">NgZone.runOutsideAngular()</code> to escape Zone.
+          Applies only to Zone.js applications. These cycles followed async work without a nearby user event; verify the source before using <code style="background: rgba(0,0,0,0.06); padding: 1px 3px; border-radius: 3px;">NgZone.runOutsideAngular()</code>.
         </div>
         <div style="display: flex; flex-direction: column; gap: 6px; overflow-y: auto; flex: 1;">
           ${items}
@@ -3353,13 +3446,6 @@ export class AngularRenderScanOverlay {
     `;
   }
 
-  private signalsPanelHtml(): string {
-    return "";
-  }
-
-  private costPanelHtml(): string {
-    return "";
-  }
 }
 
 function rgba(color: readonly [number, number, number], alpha: number): string {

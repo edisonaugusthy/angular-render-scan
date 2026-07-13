@@ -22,7 +22,9 @@ import type {
   SessionExportData,
   WastedStats,
   ZonePollutionEvent,
-  CdGraph
+  CdGraph,
+  InteractionComparison,
+  InteractionReport
 } from './domain/entities';
 
 /** No-op provider for production — contributes zero bytes to output. */
@@ -40,6 +42,7 @@ export function getAIPrompt(): string { return ''; }
 export async function copyAIPrompt(): Promise<boolean> { return false; }
 export function getWastedStats(): WastedStats { return { totalChecks: 0, wastedChecks: 0, wastedPercentage: 0 }; }
 export function getLeakedComponents(): AngularRenderEntry[] { return []; }
+export function getDetachedComponents(): AngularRenderEntry[] { return []; }
 export function getOnPushCandidates(): OnPushCandidate[] { return []; }
 export function getReferentialInstability(): ReferentialInstabilityReport[] { return []; }
 export function getZonePollutionEvents(): ZonePollutionEvent[] { return []; }
@@ -54,9 +57,26 @@ export function getSessionData(): SessionExportData {
     cycles: [],
     wastedStats: { totalChecks: 0, wastedChecks: 0, wastedPercentage: 0 },
     budgetViolations: [],
+    detachedComponents: [],
     leakedComponents: [],
     onPushCandidates: [],
     zonePollutionEvents: [],
     referentialInstabilityReports: []
   };
 }
+
+let interactionName = 'Captured interaction';
+export function beginInteraction(name: string): void { interactionName = name || interactionName; }
+export function endInteraction(): InteractionReport {
+  const session = getSessionData();
+  return {
+    schemaVersion: 1, name: interactionName, startedAt: session.exportedAt, finishedAt: session.exportedAt,
+    url: '', viewport: '', findings: [], session,
+    metrics: { cycleCount: 0, componentCheckCount: 0, totalCycleDuration: 0, maxCycleDuration: 0, wastedChecks: 0, wastedPercentage: 0, budgetViolationCount: 0 }
+  };
+}
+export function getInteractionReport(): InteractionReport | undefined { return undefined; }
+export function setInteractionBaseline(_report: InteractionReport): void {}
+export function compareWithInteractionBaseline(): InteractionComparison { throw new Error('[angular-render-scan] No reports exist in noop mode.'); }
+export function formatInteractionReportMarkdown(_report: InteractionReport): string { return ''; }
+export function formatInteractionReportHtml(_report: InteractionReport): string { return ''; }

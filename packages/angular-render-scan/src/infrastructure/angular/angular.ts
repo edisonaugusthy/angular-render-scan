@@ -30,7 +30,14 @@ import {
   getLeakedComponents,
   getOnPushCandidates,
   getReferentialInstability,
-  getCdGraph
+  getCdGraph,
+  beginInteraction,
+  endInteraction,
+  getInteractionReport,
+  setInteractionBaseline,
+  compareWithInteractionBaseline,
+  formatInteractionReportMarkdown,
+  formatInteractionReportHtml
 } from '../../application/runtime';
 import { recordComponentCheck, registerComponent, unregisterComponent } from '../../application/stats';
 import type { AngularRenderScanOptions } from '../../domain/entities';
@@ -215,6 +222,13 @@ function registerGlobalApplicationRef(appRef: ApplicationRef): void {
     getOnPushCandidates,
     getReferentialInstability,
     getCdGraph,
+    beginInteraction,
+    endInteraction,
+    getInteractionReport,
+    setInteractionBaseline,
+    compareWithInteractionBaseline,
+    formatInteractionReportMarkdown,
+    formatInteractionReportHtml,
     stop: () => {
       import('../../application/runtime').then(m => m.stop());
       restoreApplicationRef(appRef);

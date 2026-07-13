@@ -272,6 +272,11 @@ export function getWastedStats(): { totalChecks: number; wastedChecks: number; w
 }
 
 export function getLeakedComponents(): AngularRenderEntry[] {
+  return getDetachedComponents();
+}
+
+/** Components whose host element is currently disconnected. This alone does not prove retention. */
+export function getDetachedComponents(): AngularRenderEntry[] {
   return [...components.values()]
     .filter((stats) => !stats.element.isConnected)
     .map(toEntry);
